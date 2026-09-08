@@ -11,10 +11,39 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import rikka.shizuku.Shizuku;
+
 public class FiveGTileService extends TileService {
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final AtomicBoolean BUSY = new AtomicBoolean(false);
     private static final String PREFS = "settings";
+
+    // After the app process is killed, Shizuku sends its binder to the new
+    // process asynchronously. A Quick Settings tile can be started before that
+    // hand-off finishes, so never treat the first pingBinder() == false as a
+    // permanent failure.
+    private final Shizuku.OnBinderReceivedListener binderReceivedListener = () -> {
+        if (ShizukuShell.isReady()) {
+            refreshAsync();
+        }
+    };
+
+    private final Shizuku.OnBinderDeadListener binderDeadListener = () ->
+            runOnUiThread(() -> setUnavailable("Shizuku 已断开"));
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener);
+        Shizuku.addBinderDeadListener(binderDeadListener);
+    }
+
+    @Override
+    public void onDestroy() {
+        Shizuku.removeBinderReceivedListener(binderReceivedListener);
+        Shizuku.removeBinderDeadListener(binderDeadListener);
+        super.onDestroy();
+    }
 
     @Override
     public void onStartListening() {
@@ -27,17 +56,23 @@ public class FiveGTileService extends TileService {
         super.onClick();
         if (!BUSY.compareAndSet(false, true)) return;
 
-        if (!ShizukuShell.isReady()) {
-            BUSY.set(false);
-            setUnavailable("需要 Shizuku");
-            Toast.makeText(this, "请打开 5G 切换并授权 Shizuku", Toast.LENGTH_SHORT).show();
-            openSetup();
-            return;
-        }
-
-        setWorking();
+        setWorking("等待 Shizuku...");
         EXECUTOR.execute(() -> {
             try {
+                // Important for process-restart recovery: give Shizuku a short
+                // window to inject/re-deliver its binder to this fresh process.
+                if (!ShizukuShell.awaitReady(3500)) {
+                    runOnUiThread(() -> {
+                        setUnavailable("需要 Shizuku");
+                        Toast.makeText(this,
+                                "Shizuku 正在运行但本 App 尚未重新连接，请打开 5G 切换一次",
+                                Toast.LENGTH_LONG).show();
+                        openSetup();
+                    });
+                    return;
+                }
+
+                runOnUiThread(() -> setWorking("正在切换..."));
                 int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
                 String before = ShizukuShell.exec(NetworkCommands.get(slot));
                 boolean enable5g = !NetworkCommands.hasNr(before);
@@ -48,7 +83,9 @@ public class FiveGTileService extends TileService {
             } catch (Throwable t) {
                 runOnUiThread(() -> {
                     setUnavailable("切换失败");
-                    Toast.makeText(this, t.getMessage() == null ? "5G 切换失败" : t.getMessage(), Toast.LENGTH_LONG).show();
+                    Toast.makeText(this,
+                            t.getMessage() == null ? "5G 切换失败" : t.getMessage(),
+                            Toast.LENGTH_LONG).show();
                 });
             } finally {
                 BUSY.set(false);
@@ -57,12 +94,15 @@ public class FiveGTileService extends TileService {
     }
 
     private void refreshAsync() {
-        if (!ShizukuShell.isReady()) {
-            setUnavailable("需要 Shizuku");
-            return;
-        }
         EXECUTOR.execute(() -> {
             try {
+                // Do not instantly mark the tile dead after process recreation.
+                // The binder delivery is asynchronous and normally arrives very
+                // quickly once the TileService process exists.
+                if (!ShizukuShell.awaitReady(2500)) {
+                    runOnUiThread(() -> setUnavailable("等待 Shizuku"));
+                    return;
+                }
                 int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
                 String value = ShizukuShell.exec(NetworkCommands.get(slot));
                 boolean nr = NetworkCommands.hasNr(value);
@@ -84,11 +124,11 @@ public class FiveGTileService extends TileService {
         tile.updateTile();
     }
 
-    private void setWorking() {
+    private void setWorking(String label) {
         Tile tile = getQsTile();
         if (tile == null) return;
         tile.setState(Tile.STATE_INACTIVE);
-        tile.setLabel("正在切换...");
+        tile.setLabel(label);
         tile.updateTile();
     }
 
