@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class FiveGTileService extends TileService {
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final AtomicBoolean BUSY = new AtomicBoolean(false);
+    private static final String PREFS = "settings";
 
     @Override
     public void onStartListening() {
@@ -37,7 +38,7 @@ public class FiveGTileService extends TileService {
         setWorking();
         EXECUTOR.execute(() -> {
             try {
-                int slot = getPreferences(MODE_PRIVATE).getInt("slot", 0);
+                int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
                 String before = ShizukuShell.exec(NetworkCommands.get(slot));
                 boolean enable5g = !NetworkCommands.hasNr(before);
                 ShizukuShell.exec(NetworkCommands.set5g(slot, enable5g));
@@ -62,7 +63,7 @@ public class FiveGTileService extends TileService {
         }
         EXECUTOR.execute(() -> {
             try {
-                int slot = getPreferences(MODE_PRIVATE).getInt("slot", 0);
+                int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
                 String value = ShizukuShell.exec(NetworkCommands.get(slot));
                 boolean nr = NetworkCommands.hasNr(value);
                 runOnUiThread(() -> updateTile(nr, true));
