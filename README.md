@@ -30,3 +30,5 @@ Dependencies:
 
 - `dev.rikka.shizuku:api:13.1.5`
 - `dev.rikka.shizuku:provider:13.1.5`
+
+Build status is produced by `.github/workflows/build-apk.yml`.
