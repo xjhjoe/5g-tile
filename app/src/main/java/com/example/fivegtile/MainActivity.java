@@ -22,6 +22,7 @@ import rikka.shizuku.Shizuku;
 
 public class MainActivity extends Activity {
     private static final int REQ_SHIZUKU = 1001;
+    private static final String PREFS = "settings";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private TextView status;
 
@@ -101,11 +102,11 @@ public class MainActivity extends Activity {
         sim2.setId(101);
         group.addView(sim1);
         group.addView(sim2);
-        int slot = getPreferences(MODE_PRIVATE).getInt("slot", 0);
+        int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
         group.check(slot == 1 ? 101 : 100);
         group.setOnCheckedChangeListener((g, id) -> {
             int selected = id == 101 ? 1 : 0;
-            getPreferences(MODE_PRIVATE).edit().putInt("slot", selected).apply();
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt("slot", selected).apply();
             requestTileRefresh();
         });
         root.addView(group, lp(-1, -2, 0, 0, 0, dp(20)));
@@ -173,7 +174,7 @@ public class MainActivity extends Activity {
         }
         executor.execute(() -> {
             try {
-                int slot = getPreferences(MODE_PRIVATE).getInt("slot", 0);
+                int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
                 String result = ShizukuShell.exec(NetworkCommands.get(slot));
                 boolean nr = NetworkCommands.hasNr(result);
                 runOnUiThread(() -> Toast.makeText(this,
