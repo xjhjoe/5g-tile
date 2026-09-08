@@ -32,6 +32,18 @@ jobs:
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
+      - name: Verify Shizuku manifest declarations
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump xmltree "$APK" --file AndroidManifest.xml > /tmp/manifest.txt
+          grep -q "moe.shizuku.manager.permission.API_V23" /tmp/manifest.txt
+          grep -q "moe.shizuku.client.V3_SUPPORT" /tmp/manifest.txt
+          grep -q "rikka.shizuku.ShizukuProvider" /tmp/manifest.txt
+          grep -q "com.example.fivegtile" /tmp/manifest.txt
+          echo "Verified packaged APK contains Shizuku permission, V3 metadata and provider."
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
