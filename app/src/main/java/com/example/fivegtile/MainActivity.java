@@ -25,15 +25,27 @@ public class MainActivity extends Activity {
     private static final String PREFS = "settings";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private TextView status;
+    private volatile boolean requestPermissionWhenBinderArrives;
 
     private final Shizuku.OnBinderReceivedListener binderReceivedListener = () -> {
+        if (requestPermissionWhenBinderArrives) {
+            requestPermissionWhenBinderArrives = false;
+            requestPermissionNow();
+        }
         CommandBridge.warmUp(this);
         refreshStatus();
     };
+
     private final Shizuku.OnBinderDeadListener binderDeadListener = this::refreshStatus;
+
     private final Shizuku.OnRequestPermissionResultListener permissionListener = (requestCode, grantResult) -> {
         if (requestCode == REQ_SHIZUKU) {
-            if (grantResult == PackageManager.PERMISSION_GRANTED) CommandBridge.warmUp(this);
+            if (grantResult == PackageManager.PERMISSION_GRANTED) {
+                CommandBridge.warmUp(this);
+                Toast.makeText(this, "Shizuku 授权成功", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "Shizuku 授权未通过", Toast.LENGTH_SHORT).show();
+            }
             refreshStatus();
         }
     };
@@ -75,7 +87,7 @@ public class MainActivity extends Activity {
         root.addView(title, lp(-1, -2, 0, 0, 0, dp(8)));
 
         TextView desc = new TextView(this);
-        desc.setText("最终架构使用 Shizuku UserService（shell uid）执行命令。特权服务由 Shizuku 以 daemon 模式维护，App 自己被清后台后，磁贴会自动重新连接，不依赖 aShell You，也不需要锁最近任务。");
+        desc.setText("使用 Shizuku UserService（shell uid）执行命令。App 被清后台后，磁贴会重新连接独立的 shell 服务，不依赖 aShell You，也不需要锁最近任务。");
         desc.setTextSize(16);
         desc.setTextColor(0xFF5A5149);
         desc.setLineSpacing(0, 1.15f);
@@ -126,7 +138,7 @@ public class MainActivity extends Activity {
         root.addView(test, lp(-1, -2, 0, 0, 0, dp(16)));
 
         TextView tip = new TextView(this);
-        tip.setText("使用方法：\n1. Shizuku 保持运行，并给本 App 授权一次。\n2. 控制中心添加“5G 切换”磁贴。\n3. 点磁贴自动 4G ↔ 5G。\n4. 可以正常从最近任务清掉本 App，再直接使用磁贴。\n\n默认使用 SIM 1 / slot 0 和你已实机验证成功的网络掩码。");
+        tip.setText("初始化只需一次：\n1. Shizuku 保持运行。\n2. 点上方“授权 / 重新连接 Shizuku”。\n3. 授权后做一次完整自检。\n4. 控制中心添加“5G 切换”磁贴。\n\n包名：com.example.fivegtile\n默认 SIM 1 / slot 0。");
         tip.setTextSize(15);
         tip.setTextColor(0xFF5A5149);
         tip.setLineSpacing(0, 1.18f);
@@ -138,19 +150,36 @@ public class MainActivity extends Activity {
     private void requestShizuku() {
         try {
             if (!Shizuku.pingBinder()) {
-                Toast.makeText(this, "Shizuku 未运行", Toast.LENGTH_SHORT).show();
-                refreshStatus();
+                requestPermissionWhenBinderArrives = true;
+                status.setText("状态：等待 Shizuku Binder，收到后会自动弹出授权");
+                Toast.makeText(this, "正在等待 Shizuku 连接，不需要反复点", Toast.LENGTH_SHORT).show();
                 return;
             }
+            requestPermissionNow();
+        } catch (Throwable t) {
+            Toast.makeText(this, "Shizuku 连接失败: " + t.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
+            refreshStatus();
+        }
+    }
+
+    private void requestPermissionNow() {
+        try {
             if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
                 CommandBridge.warmUp(this);
                 Toast.makeText(this, "Shizuku 已授权，正在连接 shell 服务", Toast.LENGTH_SHORT).show();
                 refreshStatus();
                 return;
             }
+            if (Shizuku.shouldShowRequestPermissionRationale()) {
+                Toast.makeText(this, "Shizuku 已拒绝授权，请在 Shizuku 的授权应用中重新允许本 App", Toast.LENGTH_LONG).show();
+                refreshStatus();
+                return;
+            }
             Shizuku.requestPermission(REQ_SHIZUKU);
+            status.setText("状态：已向 Shizuku 请求授权...");
         } catch (Throwable t) {
-            Toast.makeText(this, "Shizuku 连接失败: " + t.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "请求授权失败: " + t.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
+            refreshStatus();
         }
     }
 
@@ -170,11 +199,11 @@ public class MainActivity extends Activity {
             } catch (Throwable ignored) {}
 
             if (!binder) {
-                status.setText("状态：Shizuku 未连接");
+                status.setText("状态：Shizuku Binder 未连接");
                 return;
             }
             if (!granted) {
-                status.setText("状态：Shizuku 已运行，但本 App 未授权");
+                status.setText("状态：Shizuku 已连接，但本 App 未授权");
                 return;
             }
 
@@ -192,7 +221,7 @@ public class MainActivity extends Activity {
                 } catch (Throwable t) {
                     runOnUiThread(() -> {
                         if (status != null && !isFinishing() && !isDestroyed()) {
-                            status.setText("状态：Shizuku 已授权，shell 服务连接失败");
+                            status.setText("状态：Shizuku 已授权，但 UserService 连接失败");
                         }
                     });
                 }
