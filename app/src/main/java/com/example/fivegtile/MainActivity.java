@@ -35,10 +35,15 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // Build the UI first. addBinderReceivedListenerSticky() may invoke the
+        // callback immediately when Shizuku is already running; registering it
+        // before status is initialized causes a startup NullPointerException.
+        setContentView(buildUi());
+
         Shizuku.addBinderReceivedListenerSticky(binderReceivedListener);
         Shizuku.addBinderDeadListener(binderDeadListener);
         Shizuku.addRequestPermissionResultListener(permissionListener);
-        setContentView(buildUi());
         refreshStatus();
     }
 
@@ -74,6 +79,7 @@ public class MainActivity extends Activity {
         root.addView(desc, lp(-1, -2, 0, 0, 0, dp(22)));
 
         status = new TextView(this);
+        status.setText("Shizuku：检查中...");
         status.setTextSize(17);
         status.setPadding(dp(16), dp(14), dp(16), dp(14));
         status.setBackgroundColor(0xFFFFE0B2);
@@ -145,6 +151,8 @@ public class MainActivity extends Activity {
 
     private void refreshStatus() {
         runOnUiThread(() -> {
+            if (status == null || isFinishing() || isDestroyed()) return;
+
             boolean binder = false;
             boolean granted = false;
             int uid = -1;
@@ -155,6 +163,7 @@ public class MainActivity extends Activity {
                     granted = Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED;
                 }
             } catch (Throwable ignored) {}
+
             String text;
             if (!binder) {
                 text = "Shizuku：未连接";
