@@ -24,6 +24,20 @@ final class ShizukuShell {
         }
     }
 
+    static boolean awaitReady(long timeoutMs) {
+        long deadline = android.os.SystemClock.uptimeMillis() + timeoutMs;
+        do {
+            if (isReady()) return true;
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        } while (android.os.SystemClock.uptimeMillis() < deadline);
+        return isReady();
+    }
+
     static String exec(String command) throws Exception {
         if (!Shizuku.pingBinder()) {
             throw new IllegalStateException("Shizuku 未连接");
