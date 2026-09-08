@@ -8,6 +8,15 @@
         android:label="5G 切换"
         android:theme="@style/AppTheme">
 
+        <!-- Explicit declaration is intentional. Shizuku Manager only lists
+             client apps that advertise V3 support and request API_V23. The
+             provider library normally merges this metadata automatically, but
+             declaring it here makes discovery reliable with modified Android 17
+             Shizuku builds as well. -->
+        <meta-data
+            android:name="moe.shizuku.client.V3_SUPPORT"
+            android:value="true" />
+
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"
