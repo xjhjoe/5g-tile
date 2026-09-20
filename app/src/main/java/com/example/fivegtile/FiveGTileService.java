@@ -71,7 +71,7 @@ public class FiveGTileService extends TileService {
 
         CLICK_EXECUTOR.execute(() -> {
             String stage = "连接服务";
-            StringBuilder diagnostic = new StringBuilder("2.2-preview3 / SIM ")
+            StringBuilder diagnostic = new StringBuilder("2.2-final / SIM ")
                     .append(slot + 1).append("\n").append(new java.util.Date()).append('\n');
             try {
                 long deadline = started + 8000;
