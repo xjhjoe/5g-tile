@@ -31,8 +31,10 @@ public class MainActivity extends Activity {
     private static final String PREFS = "settings";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private TextView status;
+    private Button switchButton;
     private final AtomicBoolean statusPending = new AtomicBoolean(false);
     private final AtomicBoolean testPending = new AtomicBoolean(false);
+    private final AtomicBoolean switchPending = new AtomicBoolean(false);
     private volatile boolean requestPermissionWhenBinderArrives;
 
     private final Shizuku.OnBinderReceivedListener binderReceivedListener = () -> {
@@ -68,6 +70,7 @@ public class MainActivity extends Activity {
         Shizuku.addRequestPermissionResultListener(permissionListener);
         CommandBridge.warmUp(this);
         refreshStatus();
+        refreshSwitchButton();
     }
 
     @Override
@@ -83,6 +86,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refreshStatus();
+        refreshSwitchButton();
     }
 
     private View buildUi() {
@@ -101,7 +105,7 @@ public class MainActivity extends Activity {
         root.addView(title, lp(-1, -2, 0, 0, 0, dp(8)));
 
         TextView desc = new TextView(this);
-        desc.setText("2.2-preview2：点按切换当前 SIM 是否允许 5G。磁贴显示的是网络设置，实际 5G 信号仍取决于覆盖和运营商。使用前请保持 Shizuku 运行并完成授权。");
+        desc.setText("2.2-preview3：点按切换当前 SIM 是否允许 5G。磁贴显示的是网络设置，实际 5G 信号仍取决于覆盖和运营商。使用前请保持 Shizuku 运行并完成授权。");
         desc.setTextSize(16);
         desc.setTextColor(0xFF5A5149);
         desc.setLineSpacing(0, 1.15f);
@@ -143,8 +147,15 @@ public class MainActivity extends Activity {
             int selected = id == R.id.sim2 ? 1 : 0;
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt("slot", selected).apply();
             requestTileRefresh();
+            refreshSwitchButton();
         });
-        root.addView(group, lp(-1, -2, 0, 0, 0, dp(20)));
+        root.addView(group, lp(-1, -2, 0, 0, 0, dp(12)));
+
+        switchButton = new Button(this);
+        switchButton.setText("读取当前网络状态...");
+        switchButton.setEnabled(false);
+        switchButton.setOnClickListener(v -> toggleNetworkMode());
+        root.addView(switchButton, lp(-1, -2, 0, 0, 0, dp(16)));
 
         Button test = new Button(this);
         test.setText("完整自检（shell UID + 当前网络类型）");
@@ -158,7 +169,7 @@ public class MainActivity extends Activity {
                     .getString("last_operation", "还没有切换记录");
             String selfTest = getSharedPreferences(PREFS, MODE_PRIVATE)
                     .getString("last_self_test", "还没有自检记录");
-            String report = "5G Tile 2.2-preview2\n" + Build.MANUFACTURER + " " + Build.MODEL
+            String report = "5G Tile 2.2-preview3\n" + Build.MANUFACTURER + " " + Build.MODEL
                     + " / Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT
                     + ")\n\n" + operation + "\n" + selfTest;
             ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
@@ -291,6 +302,117 @@ public class MainActivity extends Activity {
                         Toast.LENGTH_LONG).show());
             } finally {
                 testPending.set(false);
+            }
+        });
+    }
+
+    private void refreshSwitchButton() {
+        if (switchButton == null || executor.isShutdown() || switchPending.get()) return;
+        executor.execute(() -> {
+            try {
+                int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
+                String result = CommandBridge.exec(this, NetworkCommands.get(slot));
+                boolean nr = NetworkCommands.hasNr(result);
+                runOnUiThread(() -> {
+                    if (switchButton != null && !isFinishing() && !isDestroyed() && !switchPending.get()) {
+                        switchButton.setEnabled(true);
+                        switchButton.setText(nr ? "切换到 4G" : "切换到 5G");
+                    }
+                });
+            } catch (Throwable t) {
+                runOnUiThread(() -> {
+                    if (switchButton != null && !isFinishing() && !isDestroyed() && !switchPending.get()) {
+                        switchButton.setEnabled(CommandBridge.isShizukuReady());
+                        switchButton.setText(CommandBridge.isShizukuReady() ? "重试读取网络状态" : "需要 Shizuku");
+                    }
+                });
+            }
+        });
+    }
+
+    private void toggleNetworkMode() {
+        if (!switchPending.compareAndSet(false, true) || executor.isShutdown()) return;
+        final int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
+        final long started = SystemClock.elapsedRealtime();
+        switchButton.setEnabled(false);
+        switchButton.setText("正在切换...");
+
+        executor.execute(() -> {
+            String stage = "连接服务";
+            StringBuilder diagnostic = new StringBuilder("2.2-preview3 App按钮 / SIM ")
+                    .append(slot + 1).append("\n").append(new java.util.Date()).append('\n');
+            try {
+                long deadline = started + 8000;
+                if (!CommandBridge.awaitReady(this, 3000)) {
+                    throw new IllegalStateException(CommandBridge.isShizukuReady()
+                            ? "后台服务连接超时，请重试"
+                            : "Shizuku 未运行或未授权，请先完成授权");
+                }
+                diagnostic.append("连接完成：")
+                        .append(SystemClock.elapsedRealtime() - started).append(" ms\n");
+
+                stage = "读取网络类型";
+                String before = CommandBridge.exec(this, NetworkCommands.get(slot), deadline);
+                long beforeMask = NetworkCommands.parseMask(before);
+                boolean target5g = (beforeMask & NetworkCommands.NR_BIT) == 0;
+                diagnostic.append("读取完成：")
+                        .append(SystemClock.elapsedRealtime() - started).append(" ms\n")
+                        .append("切换前：").append(before).append('\n');
+
+                stage = "写入网络模式";
+                CommandBridge.exec(this, NetworkCommands.set5g(slot, beforeMask, target5g), deadline);
+                diagnostic.append("写入完成：")
+                        .append(SystemClock.elapsedRealtime() - started).append(" ms\n");
+
+                stage = "确认系统设置";
+                long verifyUntil = Math.min(deadline, SystemClock.elapsedRealtime() + 2000);
+                boolean confirmed = false;
+                String after = "";
+                do {
+                    after = CommandBridge.exec(this, NetworkCommands.get(slot), deadline);
+                    if (NetworkCommands.hasNr(after) == target5g) {
+                        confirmed = true;
+                        break;
+                    }
+                    long remaining = verifyUntil - SystemClock.elapsedRealtime();
+                    if (remaining <= 0) break;
+                    Thread.sleep(Math.min(150, remaining));
+                } while (SystemClock.elapsedRealtime() < verifyUntil);
+
+                diagnostic.append("切换后：").append(after).append('\n');
+                if (!confirmed) throw new IllegalStateException("系统尚未确认切换");
+                diagnostic.append("确认完成：")
+                        .append(SystemClock.elapsedRealtime() - started).append(" ms\n");
+
+                boolean finalTarget5g = target5g;
+                runOnUiThread(() -> {
+                    if (switchButton != null && !isFinishing() && !isDestroyed()) {
+                        switchButton.setText(finalTarget5g ? "切换到 4G" : "切换到 5G");
+                        switchButton.setEnabled(true);
+                    }
+                    Toast.makeText(this,
+                            finalTarget5g ? "已允许 5G" : "已切换到 4G",
+                            Toast.LENGTH_SHORT).show();
+                });
+                requestTileRefresh();
+            } catch (Throwable t) {
+                if (t instanceof InterruptedException) Thread.currentThread().interrupt();
+                String message = t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage();
+                diagnostic.append("失败阶段：").append(stage).append("\n原因：")
+                        .append(message).append('\n');
+                runOnUiThread(() -> {
+                    if (switchButton != null && !isFinishing() && !isDestroyed()) {
+                        switchButton.setText("重试切换");
+                        switchButton.setEnabled(true);
+                    }
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                });
+            } finally {
+                diagnostic.append("总耗时：")
+                        .append(SystemClock.elapsedRealtime() - started).append(" ms\n");
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putString("last_operation", diagnostic.toString()).apply();
+                switchPending.set(false);
             }
         });
     }
