@@ -10,8 +10,8 @@ android {
         applicationId = "com.example.fivegtile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "2.1-final"
+        versionCode = 9
+        versionName = "2.2-final"
     }
 
     buildFeatures {
@@ -33,4 +33,5 @@ android {
 dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+    testImplementation("junit:junit:4.13.2")
 }
