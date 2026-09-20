@@ -101,7 +101,7 @@ public class MainActivity extends Activity {
         root.addView(title, lp(-1, -2, 0, 0, 0, dp(8)));
 
         TextView desc = new TextView(this);
-        desc.setText("2.2 测试版：点按切换当前 SIM 是否允许 5G。磁贴显示的是网络设置，实际 5G 信号仍取决于覆盖和运营商。使用前请保持 Shizuku 运行并完成授权。");
+        desc.setText("2.2-preview2：点按切换当前 SIM 是否允许 5G。磁贴显示的是网络设置，实际 5G 信号仍取决于覆盖和运营商。使用前请保持 Shizuku 运行并完成授权。");
         desc.setTextSize(16);
         desc.setTextColor(0xFF5A5149);
         desc.setLineSpacing(0, 1.15f);
@@ -158,7 +158,7 @@ public class MainActivity extends Activity {
                     .getString("last_operation", "还没有切换记录");
             String selfTest = getSharedPreferences(PREFS, MODE_PRIVATE)
                     .getString("last_self_test", "还没有自检记录");
-            String report = "5G Tile 2.2-preview\n" + Build.MANUFACTURER + " " + Build.MODEL
+            String report = "5G Tile 2.2-preview2\n" + Build.MANUFACTURER + " " + Build.MODEL
                     + " / Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT
                     + ")\n\n" + operation + "\n" + selfTest;
             ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
