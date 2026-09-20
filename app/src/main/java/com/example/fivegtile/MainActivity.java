@@ -1,10 +1,14 @@
 package com.example.fivegtile;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.os.Build;
+import android.os.SystemClock;
 import android.service.quicksettings.TileService;
 import android.view.Gravity;
 import android.view.View;
@@ -12,11 +16,13 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import rikka.shizuku.Shizuku;
 
@@ -25,6 +31,8 @@ public class MainActivity extends Activity {
     private static final String PREFS = "settings";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private TextView status;
+    private final AtomicBoolean statusPending = new AtomicBoolean(false);
+    private final AtomicBoolean testPending = new AtomicBoolean(false);
     private volatile boolean requestPermissionWhenBinderArrives;
 
     private final Shizuku.OnBinderReceivedListener binderReceivedListener = () -> {
@@ -71,6 +79,12 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshStatus();
+    }
+
     private View buildUi() {
         int pad = dp(24);
         LinearLayout root = new LinearLayout(this);
@@ -87,7 +101,7 @@ public class MainActivity extends Activity {
         root.addView(title, lp(-1, -2, 0, 0, 0, dp(8)));
 
         TextView desc = new TextView(this);
-        desc.setText("使用 Shizuku UserService（shell uid）执行命令。App 被清后台后，磁贴会重新连接独立的 shell 服务，不依赖 aShell You，也不需要锁最近任务。");
+        desc.setText("2.2 测试版：点按切换当前 SIM 是否允许 5G。磁贴显示的是网络设置，实际 5G 信号仍取决于覆盖和运营商。使用前请保持 Shizuku 运行并完成授权。");
         desc.setTextSize(16);
         desc.setTextColor(0xFF5A5149);
         desc.setLineSpacing(0, 1.15f);
@@ -137,6 +151,22 @@ public class MainActivity extends Activity {
         test.setOnClickListener(v -> testRead());
         root.addView(test, lp(-1, -2, 0, 0, 0, dp(16)));
 
+        Button copy = new Button(this);
+        copy.setText("复制诊断（最近一次切换 / 自检）");
+        copy.setOnClickListener(v -> {
+            String operation = getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .getString("last_operation", "还没有切换记录");
+            String selfTest = getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .getString("last_self_test", "还没有自检记录");
+            String report = "5G Tile 2.2-preview\n" + Build.MANUFACTURER + " " + Build.MODEL
+                    + " / Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT
+                    + ")\n\n" + operation + "\n" + selfTest;
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            clipboard.setPrimaryClip(ClipData.newPlainText("5G 切换诊断", report));
+            Toast.makeText(this, "诊断已复制", Toast.LENGTH_SHORT).show();
+        });
+        root.addView(copy, lp(-1, -2, 0, 0, 0, dp(16)));
+
         TextView tip = new TextView(this);
         tip.setText("初始化只需一次：\n1. Shizuku 保持运行。\n2. 点上方“授权 / 重新连接 Shizuku”。\n3. 授权后做一次完整自检。\n4. 控制中心添加“5G 切换”磁贴。\n\n包名：com.example.fivegtile\n默认 SIM 1 / slot 0。");
         tip.setTextSize(15);
@@ -144,7 +174,9 @@ public class MainActivity extends Activity {
         tip.setLineSpacing(0, 1.18f);
         root.addView(tip, lp(-1, -2, 0, 0, 0, 0));
 
-        return root;
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(root);
+        return scroll;
     }
 
     private void requestShizuku() {
@@ -208,6 +240,7 @@ public class MainActivity extends Activity {
             }
 
             status.setText("状态：Shizuku 已授权（server uid=" + shizukuUid + "），正在连接 shell 服务...");
+            if (!statusPending.compareAndSet(false, true) || executor.isShutdown()) return;
             executor.execute(() -> {
                 try {
                     int uid = CommandBridge.remoteUid(this);
@@ -224,27 +257,40 @@ public class MainActivity extends Activity {
                             status.setText("状态：Shizuku 已授权，但 UserService 连接失败");
                         }
                     });
+                } finally {
+                    statusPending.set(false);
                 }
             });
         });
     }
 
     private void testRead() {
+        if (!testPending.compareAndSet(false, true) || executor.isShutdown()) return;
         executor.execute(() -> {
+            long started = SystemClock.elapsedRealtime();
             try {
                 int uid = CommandBridge.remoteUid(this);
                 int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
                 String result = CommandBridge.exec(this, NetworkCommands.get(slot));
                 boolean nr = NetworkCommands.hasNr(result);
+                String report = "自检：SIM " + (slot + 1) + " / uid=" + uid + "\n"
+                        + result + "\n耗时：" + (SystemClock.elapsedRealtime() - started) + " ms";
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putString("last_self_test", report).apply();
                 runOnUiThread(() -> Toast.makeText(this,
                         "UserService uid=" + uid + "\n"
                                 + (nr ? "当前允许 5G (NR)\n" : "当前未允许 5G (NR)\n")
                                 + result,
                         Toast.LENGTH_LONG).show());
             } catch (Throwable t) {
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putString("last_self_test", "自检失败：" + t.getMessage()
+                                + "\n耗时：" + (SystemClock.elapsedRealtime() - started) + " ms").apply();
                 runOnUiThread(() -> Toast.makeText(this,
                         t.getMessage() == null ? "自检失败" : "自检失败：" + t.getMessage(),
                         Toast.LENGTH_LONG).show());
+            } finally {
+                testPending.set(false);
             }
         });
     }
