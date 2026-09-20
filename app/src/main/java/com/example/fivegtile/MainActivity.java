@@ -4,10 +4,13 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ComponentName;
+import android.content.res.ColorStateList;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.graphics.Typeface;
-import android.os.Bundle;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.SystemClock;
 import android.service.quicksettings.TileService;
 import android.view.Gravity;
@@ -29,9 +32,21 @@ import rikka.shizuku.Shizuku;
 public class MainActivity extends Activity {
     private static final int REQ_SHIZUKU = 1001;
     private static final String PREFS = "settings";
+
+    private static final int BG = Color.rgb(6, 21, 46);
+    private static final int CARD = Color.rgb(14, 41, 82);
+    private static final int CARD_ALT = Color.rgb(11, 34, 70);
+    private static final int CYAN = Color.rgb(44, 211, 255);
+    private static final int BLUE = Color.rgb(32, 126, 255);
+    private static final int TEXT = Color.WHITE;
+    private static final int TEXT_MUTED = Color.rgb(166, 190, 225);
+    private static final int GREEN = Color.rgb(50, 220, 145);
+
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private TextView status;
+    private TextView modeText;
     private Button switchButton;
+
     private final AtomicBoolean statusPending = new AtomicBoolean(false);
     private final AtomicBoolean testPending = new AtomicBoolean(false);
     private final AtomicBoolean switchPending = new AtomicBoolean(false);
@@ -44,9 +59,13 @@ public class MainActivity extends Activity {
         }
         CommandBridge.warmUp(this);
         refreshStatus();
+        refreshSwitchButton();
     };
 
-    private final Shizuku.OnBinderDeadListener binderDeadListener = this::refreshStatus;
+    private final Shizuku.OnBinderDeadListener binderDeadListener = () -> {
+        refreshStatus();
+        refreshSwitchButton();
+    };
 
     private final Shizuku.OnRequestPermissionResultListener permissionListener = (requestCode, grantResult) -> {
         if (requestCode == REQ_SHIZUKU) {
@@ -57,6 +76,7 @@ public class MainActivity extends Activity {
                 Toast.makeText(this, "Shizuku 授权未通过", Toast.LENGTH_SHORT).show();
             }
             refreshStatus();
+            refreshSwitchButton();
         }
     };
 
@@ -90,57 +110,74 @@ public class MainActivity extends Activity {
     }
 
     private View buildUi() {
-        int pad = dp(24);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(BG);
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(pad, dp(36), pad, pad);
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setBackgroundColor(0xFFFAF7F2);
+        root.setPadding(dp(20), dp(28), dp(20), dp(28));
+        root.setBackgroundColor(BG);
 
-        TextView title = new TextView(this);
-        title.setText("5G 快捷切换");
-        title.setTextSize(30);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        title.setTextColor(0xFF2B2723);
-        root.addView(title, lp(-1, -2, 0, 0, 0, dp(8)));
+        LinearLayout hero = card(CARD);
+        hero.setPadding(dp(20), dp(20), dp(20), dp(20));
 
-        TextView desc = new TextView(this);
-        desc.setText("2.2-preview3：点按切换当前 SIM 是否允许 5G。磁贴显示的是网络设置，实际 5G 信号仍取决于覆盖和运营商。使用前请保持 Shizuku 运行并完成授权。");
-        desc.setTextSize(16);
-        desc.setTextColor(0xFF5A5149);
-        desc.setLineSpacing(0, 1.15f);
-        root.addView(desc, lp(-1, -2, 0, 0, 0, dp(22)));
+        TextView badge = text("5G", 15, Typeface.BOLD, CYAN);
+        badge.setGravity(Gravity.CENTER);
+        badge.setBackground(rounded(Color.rgb(15, 69, 120), dp(16), CYAN, 1));
+        hero.addView(badge, lp(dp(56), dp(34), 0, 0, 0, dp(14)));
 
-        status = new TextView(this);
-        status.setText("状态：检查中...");
-        status.setTextSize(17);
-        status.setPadding(dp(16), dp(14), dp(16), dp(14));
-        status.setBackgroundColor(0xFFFFE0B2);
-        status.setTextColor(0xFF3D2F22);
-        root.addView(status, lp(-1, -2, 0, 0, 0, dp(12)));
+        TextView title = text("5G Tile", 30, Typeface.BOLD, TEXT);
+        hero.addView(title, lp(-1, -2, 0, 0, 0, dp(4)));
 
-        Button grant = new Button(this);
-        grant.setText("授权 / 重新连接 Shizuku");
+        TextView subtitle = text("快速切换 4G / 5G · Shizuku", 15, Typeface.NORMAL, TEXT_MUTED);
+        hero.addView(subtitle, lp(-1, -2, 0, 0, 0, dp(10)));
+
+        TextView version = text("v2.2 final · Android 17 optimized", 12, Typeface.NORMAL, Color.rgb(104, 158, 220));
+        hero.addView(version, lp(-1, -2, 0, 0, 0, 0));
+        root.addView(hero, lp(-1, -2, 0, 0, 0, dp(14)));
+
+        LinearLayout statusCard = card(CARD_ALT);
+        statusCard.setPadding(dp(18), dp(16), dp(18), dp(16));
+
+        TextView statusTitle = text("连接状态", 13, Typeface.BOLD, TEXT_MUTED);
+        statusCard.addView(statusTitle, lp(-1, -2, 0, 0, 0, dp(7)));
+
+        status = text("正在检查 Shizuku…", 17, Typeface.BOLD, TEXT);
+        statusCard.addView(status, lp(-1, -2, 0, 0, 0, dp(12)));
+
+        Button grant = secondaryButton("授权 / 重新连接 Shizuku");
         grant.setOnClickListener(v -> requestShizuku());
-        root.addView(grant, lp(-1, -2, 0, 0, 0, dp(20)));
+        statusCard.addView(grant, lp(-1, dp(48), 0, 0, 0, 0));
+        root.addView(statusCard, lp(-1, -2, 0, 0, 0, dp(14)));
 
-        TextView simTitle = new TextView(this);
-        simTitle.setText("目标 SIM");
-        simTitle.setTextSize(18);
-        simTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        simTitle.setTextColor(0xFF2B2723);
-        root.addView(simTitle, lp(-1, -2, 0, 0, 0, dp(6)));
+        LinearLayout simCard = card(CARD_ALT);
+        simCard.setPadding(dp(18), dp(16), dp(18), dp(16));
+
+        TextView simTitle = text("目标 SIM", 13, Typeface.BOLD, TEXT_MUTED);
+        simCard.addView(simTitle, lp(-1, -2, 0, 0, 0, dp(8)));
 
         RadioGroup group = new RadioGroup(this);
         group.setOrientation(RadioGroup.HORIZONTAL);
+        group.setGravity(Gravity.CENTER_VERTICAL);
+
         RadioButton sim1 = new RadioButton(this);
-        sim1.setText("SIM 1（slot 0）");
+        sim1.setText("SIM 1");
+        sim1.setTextColor(TEXT);
+        sim1.setTextSize(16);
         sim1.setId(R.id.sim1);
+        sim1.setButtonTintList(radioTint());
+
         RadioButton sim2 = new RadioButton(this);
-        sim2.setText("SIM 2（slot 1）");
+        sim2.setText("SIM 2");
+        sim2.setTextColor(TEXT);
+        sim2.setTextSize(16);
         sim2.setId(R.id.sim2);
-        group.addView(sim1);
-        group.addView(sim2);
+        sim2.setButtonTintList(radioTint());
+
+        group.addView(sim1, new RadioGroup.LayoutParams(0, dp(48), 1f));
+        group.addView(sim2, new RadioGroup.LayoutParams(0, dp(48), 1f));
+
         int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
         group.check(slot == 1 ? R.id.sim2 : R.id.sim1);
         group.setOnCheckedChangeListener((g, id) -> {
@@ -149,53 +186,74 @@ public class MainActivity extends Activity {
             requestTileRefresh();
             refreshSwitchButton();
         });
-        root.addView(group, lp(-1, -2, 0, 0, 0, dp(12)));
 
-        switchButton = new Button(this);
-        switchButton.setText("读取当前网络状态...");
+        simCard.addView(group, lp(-1, -2, 0, 0, 0, 0));
+        root.addView(simCard, lp(-1, -2, 0, 0, 0, dp(14)));
+
+        LinearLayout actionCard = card(CARD);
+        actionCard.setPadding(dp(18), dp(18), dp(18), dp(18));
+
+        TextView modeLabel = text("当前网络模式", 13, Typeface.BOLD, TEXT_MUTED);
+        actionCard.addView(modeLabel, lp(-1, -2, 0, 0, 0, dp(5)));
+
+        modeText = text("正在读取…", 24, Typeface.BOLD, TEXT);
+        actionCard.addView(modeText, lp(-1, -2, 0, 0, 0, dp(14)));
+
+        switchButton = primaryButton("读取当前网络状态…");
         switchButton.setEnabled(false);
         switchButton.setOnClickListener(v -> toggleNetworkMode());
-        root.addView(switchButton, lp(-1, -2, 0, 0, 0, dp(16)));
+        actionCard.addView(switchButton, lp(-1, dp(58), 0, 0, 0, 0));
+        root.addView(actionCard, lp(-1, -2, 0, 0, 0, dp(14)));
 
-        Button test = new Button(this);
-        test.setText("完整自检（shell UID + 当前网络类型）");
+        LinearLayout tools = new LinearLayout(this);
+        tools.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button test = secondaryButton("完整自检");
         test.setOnClickListener(v -> testRead());
-        root.addView(test, lp(-1, -2, 0, 0, 0, dp(16)));
+        tools.addView(test, new LinearLayout.LayoutParams(0, dp(52), 1f));
 
-        Button copy = new Button(this);
-        copy.setText("复制诊断（最近一次切换 / 自检）");
-        copy.setOnClickListener(v -> {
-            String operation = getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .getString("last_operation", "还没有切换记录");
-            String selfTest = getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .getString("last_self_test", "还没有自检记录");
-            String report = "5G Tile 2.2-preview3\n" + Build.MANUFACTURER + " " + Build.MODEL
-                    + " / Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT
-                    + ")\n\n" + operation + "\n" + selfTest;
-            ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-            clipboard.setPrimaryClip(ClipData.newPlainText("5G 切换诊断", report));
-            Toast.makeText(this, "诊断已复制", Toast.LENGTH_SHORT).show();
-        });
-        root.addView(copy, lp(-1, -2, 0, 0, 0, dp(16)));
+        View spacer = new View(this);
+        tools.addView(spacer, new LinearLayout.LayoutParams(dp(10), 1));
 
-        TextView tip = new TextView(this);
-        tip.setText("初始化只需一次：\n1. Shizuku 保持运行。\n2. 点上方“授权 / 重新连接 Shizuku”。\n3. 授权后做一次完整自检。\n4. 控制中心添加“5G 切换”磁贴。\n\n包名：com.example.fivegtile\n默认 SIM 1 / slot 0。");
-        tip.setTextSize(15);
-        tip.setTextColor(0xFF5A5149);
-        tip.setLineSpacing(0, 1.18f);
-        root.addView(tip, lp(-1, -2, 0, 0, 0, 0));
+        Button copy = secondaryButton("复制诊断");
+        copy.setOnClickListener(v -> copyDiagnostics());
+        tools.addView(copy, new LinearLayout.LayoutParams(0, dp(52), 1f));
+        root.addView(tools, lp(-1, -2, 0, 0, 0, dp(14)));
 
-        ScrollView scroll = new ScrollView(this);
+        LinearLayout info = card(CARD_ALT);
+        info.setPadding(dp(16), dp(14), dp(16), dp(14));
+        TextView tip = text(
+                "• 切换完成后会再次读取系统网络模式确认结果\n" +
+                "• “允许 5G”不代表当前一定连接到 5G 信号\n" +
+                "• 控制中心磁贴与 App 使用同一套切换逻辑",
+                13, Typeface.NORMAL, TEXT_MUTED);
+        tip.setLineSpacing(dp(2), 1.05f);
+        info.addView(tip, lp(-1, -2, 0, 0, 0, 0));
+        root.addView(info, lp(-1, -2, 0, 0, 0, 0));
+
         scroll.addView(root);
         return scroll;
+    }
+
+    private void copyDiagnostics() {
+        String operation = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString("last_operation", "还没有切换记录");
+        String selfTest = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString("last_self_test", "还没有自检记录");
+        String report = "5G Tile 2.2-final\n" + Build.MANUFACTURER + " " + Build.MODEL
+                + " / Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT
+                + ")\n\n" + operation + "\n" + selfTest;
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("5G Tile 诊断", report));
+        Toast.makeText(this, "诊断已复制", Toast.LENGTH_SHORT).show();
     }
 
     private void requestShizuku() {
         try {
             if (!Shizuku.pingBinder()) {
                 requestPermissionWhenBinderArrives = true;
-                status.setText("状态：等待 Shizuku Binder，收到后会自动弹出授权");
-                Toast.makeText(this, "正在等待 Shizuku 连接，不需要反复点", Toast.LENGTH_SHORT).show();
+                setStatus("等待 Shizuku Binder…", TEXT_MUTED);
+                Toast.makeText(this, "正在等待 Shizuku 连接", Toast.LENGTH_SHORT).show();
                 return;
             }
             requestPermissionNow();
@@ -209,17 +267,17 @@ public class MainActivity extends Activity {
         try {
             if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
                 CommandBridge.warmUp(this);
-                Toast.makeText(this, "Shizuku 已授权，正在连接 shell 服务", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Shizuku 已授权", Toast.LENGTH_SHORT).show();
                 refreshStatus();
                 return;
             }
             if (Shizuku.shouldShowRequestPermissionRationale()) {
-                Toast.makeText(this, "Shizuku 已拒绝授权，请在 Shizuku 的授权应用中重新允许本 App", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "请在 Shizuku 的授权应用中允许 5G Tile", Toast.LENGTH_LONG).show();
                 refreshStatus();
                 return;
             }
             Shizuku.requestPermission(REQ_SHIZUKU);
-            status.setText("状态：已向 Shizuku 请求授权...");
+            setStatus("正在请求 Shizuku 授权…", TEXT_MUTED);
         } catch (Throwable t) {
             Toast.makeText(this, "请求授权失败: " + t.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
             refreshStatus();
@@ -232,42 +290,36 @@ public class MainActivity extends Activity {
 
             boolean binder = false;
             boolean granted = false;
-            int shizukuUid = -1;
             try {
                 binder = Shizuku.pingBinder();
                 if (binder) {
-                    shizukuUid = Shizuku.getUid();
                     granted = Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED;
                 }
             } catch (Throwable ignored) {}
 
             if (!binder) {
-                status.setText("状态：Shizuku Binder 未连接");
+                setStatus("Shizuku 未连接", TEXT_MUTED);
                 return;
             }
             if (!granted) {
-                status.setText("状态：Shizuku 已连接，但本 App 未授权");
+                setStatus("Shizuku 已连接 · 等待授权", TEXT_MUTED);
                 return;
             }
 
-            status.setText("状态：Shizuku 已授权（server uid=" + shizukuUid + "），正在连接 shell 服务...");
+            setStatus("Shizuku 已授权 · 正在连接服务…", CYAN);
             if (!statusPending.compareAndSet(false, true) || executor.isShutdown()) return;
             executor.execute(() -> {
                 try {
                     int uid = CommandBridge.remoteUid(this);
                     runOnUiThread(() -> {
                         if (status != null && !isFinishing() && !isDestroyed()) {
-                            status.setText(uid == 2000
-                                    ? "状态：就绪，UserService uid=2000 (shell)"
-                                    : "状态：UserService 已连接，uid=" + uid);
+                            setStatus(uid == 2000
+                                    ? "Shizuku 已准备就绪"
+                                    : "UserService 已连接 · uid=" + uid, GREEN);
                         }
                     });
                 } catch (Throwable t) {
-                    runOnUiThread(() -> {
-                        if (status != null && !isFinishing() && !isDestroyed()) {
-                            status.setText("状态：Shizuku 已授权，但 UserService 连接失败");
-                        }
-                    });
+                    runOnUiThread(() -> setStatus("后台服务连接失败", Color.rgb(255, 186, 90)));
                 } finally {
                     statusPending.set(false);
                 }
@@ -288,11 +340,12 @@ public class MainActivity extends Activity {
                         + result + "\n耗时：" + (SystemClock.elapsedRealtime() - started) + " ms";
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                         .putString("last_self_test", report).apply();
-                runOnUiThread(() -> Toast.makeText(this,
-                        "UserService uid=" + uid + "\n"
-                                + (nr ? "当前允许 5G (NR)\n" : "当前未允许 5G (NR)\n")
-                                + result,
-                        Toast.LENGTH_LONG).show());
+                runOnUiThread(() -> {
+                    modeText.setText(nr ? "5G 已允许" : "4G 模式");
+                    Toast.makeText(this,
+                            (nr ? "当前允许 5G (NR)\n" : "当前未允许 5G (NR)\n") + result,
+                            Toast.LENGTH_LONG).show();
+                });
             } catch (Throwable t) {
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                         .putString("last_self_test", "自检失败：" + t.getMessage()
@@ -317,13 +370,15 @@ public class MainActivity extends Activity {
                     if (switchButton != null && !isFinishing() && !isDestroyed() && !switchPending.get()) {
                         switchButton.setEnabled(true);
                         switchButton.setText(nr ? "切换到 4G" : "切换到 5G");
+                        modeText.setText(nr ? "5G 已允许" : "4G 模式");
                     }
                 });
             } catch (Throwable t) {
                 runOnUiThread(() -> {
                     if (switchButton != null && !isFinishing() && !isDestroyed() && !switchPending.get()) {
                         switchButton.setEnabled(CommandBridge.isShizukuReady());
-                        switchButton.setText(CommandBridge.isShizukuReady() ? "重试读取网络状态" : "需要 Shizuku");
+                        switchButton.setText(CommandBridge.isShizukuReady() ? "重试读取状态" : "需要 Shizuku");
+                        modeText.setText("状态不可用");
                     }
                 });
             }
@@ -335,11 +390,11 @@ public class MainActivity extends Activity {
         final int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
         final long started = SystemClock.elapsedRealtime();
         switchButton.setEnabled(false);
-        switchButton.setText("正在切换...");
+        switchButton.setText("正在切换…");
 
         executor.execute(() -> {
             String stage = "连接服务";
-            StringBuilder diagnostic = new StringBuilder("2.2-preview3 App按钮 / SIM ")
+            StringBuilder diagnostic = new StringBuilder("2.2-final App按钮 / SIM ")
                     .append(slot + 1).append("\n").append(new java.util.Date()).append('\n');
             try {
                 long deadline = started + 8000;
@@ -389,6 +444,7 @@ public class MainActivity extends Activity {
                     if (switchButton != null && !isFinishing() && !isDestroyed()) {
                         switchButton.setText(finalTarget5g ? "切换到 4G" : "切换到 5G");
                         switchButton.setEnabled(true);
+                        modeText.setText(finalTarget5g ? "5G 已允许" : "4G 模式");
                     }
                     Toast.makeText(this,
                             finalTarget5g ? "已允许 5G" : "已切换到 4G",
@@ -422,6 +478,77 @@ public class MainActivity extends Activity {
             TileService.requestListeningState(this,
                     new ComponentName(this, FiveGTileService.class));
         } catch (Throwable ignored) {}
+    }
+
+    private void setStatus(String value, int color) {
+        if (status == null) return;
+        status.setText(value);
+        status.setTextColor(color);
+    }
+
+    private LinearLayout card(int color) {
+        LinearLayout v = new LinearLayout(this);
+        v.setOrientation(LinearLayout.VERTICAL);
+        v.setBackground(rounded(color, dp(20), Color.rgb(24, 65, 118), 1));
+        return v;
+    }
+
+    private Button primaryButton(String label) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setTextSize(18);
+        b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        b.setTextColor(TEXT);
+        b.setAllCaps(false);
+        b.setBackground(gradientButton());
+        b.setStateListAnimator(null);
+        return b;
+    }
+
+    private Button secondaryButton(String label) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setTextSize(14);
+        b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        b.setTextColor(Color.rgb(214, 232, 255));
+        b.setAllCaps(false);
+        b.setBackground(rounded(Color.rgb(17, 52, 98), dp(15), Color.rgb(35, 85, 145), 1));
+        b.setStateListAnimator(null);
+        return b;
+    }
+
+    private TextView text(String value, float size, int style, int color) {
+        TextView t = new TextView(this);
+        t.setText(value);
+        t.setTextSize(size);
+        t.setTypeface(Typeface.DEFAULT, style);
+        t.setTextColor(color);
+        return t;
+    }
+
+    private ColorStateList radioTint() {
+        int[][] states = new int[][] {
+                new int[] { android.R.attr.state_checked },
+                new int[] {}
+        };
+        int[] colors = new int[] { CYAN, Color.rgb(105, 139, 184) };
+        return new ColorStateList(states, colors);
+    }
+
+    private GradientDrawable rounded(int color, float radius, int strokeColor, int strokeWidthDp) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(radius);
+        if (strokeWidthDp > 0) d.setStroke(dp(strokeWidthDp), strokeColor);
+        return d;
+    }
+
+    private GradientDrawable gradientButton() {
+        GradientDrawable d = new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[] { BLUE, CYAN });
+        d.setCornerRadius(dp(18));
+        return d;
     }
 
     private LinearLayout.LayoutParams lp(int w, int h, int l, int t, int r, int b) {
