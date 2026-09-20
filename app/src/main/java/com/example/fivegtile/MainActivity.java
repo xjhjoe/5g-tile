@@ -131,16 +131,16 @@ public class MainActivity extends Activity {
         group.setOrientation(RadioGroup.HORIZONTAL);
         RadioButton sim1 = new RadioButton(this);
         sim1.setText("SIM 1（slot 0）");
-        sim1.setId(100);
+        sim1.setId(R.id.sim1);
         RadioButton sim2 = new RadioButton(this);
         sim2.setText("SIM 2（slot 1）");
-        sim2.setId(101);
+        sim2.setId(R.id.sim2);
         group.addView(sim1);
         group.addView(sim2);
         int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
-        group.check(slot == 1 ? 101 : 100);
+        group.check(slot == 1 ? R.id.sim2 : R.id.sim1);
         group.setOnCheckedChangeListener((g, id) -> {
-            int selected = id == 101 ? 1 : 0;
+            int selected = id == R.id.sim2 ? 1 : 0;
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt("slot", selected).apply();
             requestTileRefresh();
         });
