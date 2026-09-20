@@ -5,7 +5,9 @@
 
     <application
         android:allowBackup="false"
-        android:label="5G 切换"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="5G Tile"
         android:theme="@style/AppTheme">
 
         <!-- Explicit declaration is intentional. Shizuku Manager only lists
@@ -40,7 +42,7 @@
             android:name=".FiveGTileService"
             android:exported="true"
             android:icon="@drawable/ic_signal"
-            android:label="5G 切换"
+            android:label="5G Tile"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
