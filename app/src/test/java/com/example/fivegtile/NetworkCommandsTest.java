@@ -11,6 +11,15 @@ public class NetworkCommandsTest {
         assertFalse(NetworkCommands.hasNr("GSM|LTE"));
     }
 
+    @Test public void parsesAndroid17HumanReadableNetworkTypeNames() {
+        String android17 = "GPRS|EDGE|UMTS|CDMA|CDMA - EvDo rev. 0|CDMA - EvDo rev. A"
+                + "|CDMA - 1xRTT|HSDPA|HSUPA|HSPA|CDMA - EvDo rev. B|LTE"
+                + "|CDMA - eHRPD|HSPA+|GSM|LTE_CA";
+        long mask = NetworkCommands.parseMask(android17);
+        assertFalse((mask & NetworkCommands.NR_BIT) != 0);
+        assertEquals(Long.parseLong("01001111101111111111", 2), mask);
+    }
+
     @Test public void preservesExistingNetworkTypesWhenEnablingAndDisablingNr() {
         long original = NetworkCommands.parseMask("GSM|UMTS|LTE|LTE_CA|IWLAN|1xRTT");
         long enabled = targetMask(NetworkCommands.set5g(1, original, true));
