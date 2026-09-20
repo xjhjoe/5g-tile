@@ -213,6 +213,9 @@ public class FiveGTileService extends TileService {
         } catch (RuntimeException ignored) {}
     }
 
+    // The PendingIntent overload exists only on API 34+. The legacy call below
+    // is reachable only on older Android, where that overload is unavailable.
+    @android.annotation.SuppressLint("StartActivityAndCollapseDeprecated")
     private void openSetup() {
         Intent intent = new Intent(this, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
