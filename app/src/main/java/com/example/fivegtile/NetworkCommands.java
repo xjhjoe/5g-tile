@@ -45,6 +45,28 @@ final class NetworkCommands {
         return (parseMask(result) & NR_BIT) != 0;
     }
 
+    static String getXiaomiFiveGSwitch() {
+        return "settings get global fiveg_user_enable";
+    }
+
+    static String setXiaomiFiveGSwitch(boolean enable) {
+        return "settings put global fiveg_user_enable " + (enable ? "1" : "0");
+    }
+
+    static Boolean parseXiaomiFiveGSwitch(String result) {
+        if (result == null) return null;
+        String value = result.trim();
+        if (value.isEmpty() || "null".equalsIgnoreCase(value)) return null;
+        if ("1".equals(value)) return Boolean.TRUE;
+        if ("0".equals(value)) return Boolean.FALSE;
+        throw new IllegalArgumentException("无法识别小米 5G 主开关状态：" + value);
+    }
+
+    static boolean isEffective5gEnabled(String networkTypes, String xiaomiSwitch) {
+        Boolean vendor = parseXiaomiFiveGSwitch(xiaomiSwitch);
+        return hasNr(networkTypes) && (vendor == null || vendor);
+    }
+
     private static int bitForType(String type) {
         switch (type) {
             case "GPRS": return 0;
