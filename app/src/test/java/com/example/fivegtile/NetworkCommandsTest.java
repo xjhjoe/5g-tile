@@ -45,6 +45,28 @@ public class NetworkCommandsTest {
         }
     }
 
+    @Test public void parsesXiaomiMasterSwitchAndEffectiveState() {
+        assertEquals(Boolean.TRUE, NetworkCommands.parseXiaomiFiveGSwitch("1\n"));
+        assertEquals(Boolean.FALSE, NetworkCommands.parseXiaomiFiveGSwitch("0"));
+        assertNull(NetworkCommands.parseXiaomiFiveGSwitch("null"));
+        assertNull(NetworkCommands.parseXiaomiFiveGSwitch(" "));
+        assertThrows(IllegalArgumentException.class,
+                () -> NetworkCommands.parseXiaomiFiveGSwitch("unexpected"));
+
+        assertTrue(NetworkCommands.isEffective5gEnabled("LTE|NR", "1"));
+        assertFalse(NetworkCommands.isEffective5gEnabled("LTE|NR", "0"));
+        assertFalse(NetworkCommands.isEffective5gEnabled("LTE", "1"));
+        // Devices without this vendor key keep the original NR-only behavior.
+        assertTrue(NetworkCommands.isEffective5gEnabled("LTE|NR", "null"));
+
+        assertEquals("settings get global fiveg_user_enable",
+                NetworkCommands.getXiaomiFiveGSwitch());
+        assertEquals("settings put global fiveg_user_enable 1",
+                NetworkCommands.setXiaomiFiveGSwitch(true));
+        assertEquals("settings put global fiveg_user_enable 0",
+                NetworkCommands.setXiaomiFiveGSwitch(false));
+    }
+
     @Test public void refusesToDisableEveryRadioTypeOrUseInvalidSlot() {
         assertThrows(IllegalArgumentException.class,
                 () -> NetworkCommands.set5g(0, NetworkCommands.NR_BIT, false));
