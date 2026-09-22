@@ -133,7 +133,7 @@ public class MainActivity extends Activity {
         TextView subtitle = text("快速切换 4G / 5G · Shizuku", 15, Typeface.NORMAL, TEXT_MUTED);
         hero.addView(subtitle, lp(-1, -2, 0, 0, 0, dp(10)));
 
-        TextView version = text("v2.2 final · Android 17 optimized", 12, Typeface.NORMAL, Color.rgb(104, 158, 220));
+        TextView version = text("v2.3 preview1 · Xiaomi 5G master switch", 12, Typeface.NORMAL, Color.rgb(104, 158, 220));
         hero.addView(version, lp(-1, -2, 0, 0, 0, 0));
         root.addView(hero, lp(-1, -2, 0, 0, 0, dp(14)));
 
@@ -224,7 +224,7 @@ public class MainActivity extends Activity {
         info.setPadding(dp(16), dp(14), dp(16), dp(14));
         TextView tip = text(
                 "• 切换完成后会再次读取系统网络模式确认结果\n" +
-                "• “允许 5G”不代表当前一定连接到 5G 信号\n" +
+                "• App 会同时切换小米 5G 主开关与 NR 网络模式\n" +
                 "• 控制中心磁贴与 App 使用同一套切换逻辑",
                 13, Typeface.NORMAL, TEXT_MUTED);
         tip.setLineSpacing(dp(2), 1.05f);
@@ -240,7 +240,7 @@ public class MainActivity extends Activity {
                 .getString("last_operation", "还没有切换记录");
         String selfTest = getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getString("last_self_test", "还没有自检记录");
-        String report = "5G Tile 2.2-final\n" + Build.MANUFACTURER + " " + Build.MODEL
+        String report = "5G Tile 2.3-preview1\n" + Build.MANUFACTURER + " " + Build.MODEL
                 + " / Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT
                 + ")\n\n" + operation + "\n" + selfTest;
         ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
@@ -334,16 +334,21 @@ public class MainActivity extends Activity {
             try {
                 int uid = CommandBridge.remoteUid(this);
                 int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
-                String result = CommandBridge.exec(this, NetworkCommands.get(slot));
-                boolean nr = NetworkCommands.hasNr(result);
+                long deadline = SystemClock.elapsedRealtime() + 4000;
+                String result = CommandBridge.exec(this, NetworkCommands.get(slot), deadline);
+                String master = CommandBridge.exec(this, NetworkCommands.getXiaomiFiveGSwitch(), deadline);
+                boolean nr = NetworkCommands.isEffective5gEnabled(result, master);
                 String report = "自检：SIM " + (slot + 1) + " / uid=" + uid + "\n"
-                        + result + "\n耗时：" + (SystemClock.elapsedRealtime() - started) + " ms";
+                        + "网络类型：" + result + "\n"
+                        + "fiveg_user_enable：" + master + "\n"
+                        + "实际状态：" + (nr ? "5G 已开启" : "5G 未开启") + "\n"
+                        + "耗时：" + (SystemClock.elapsedRealtime() - started) + " ms";
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                         .putString("last_self_test", report).apply();
                 runOnUiThread(() -> {
-                    modeText.setText(nr ? "5G 已允许" : "4G 模式");
+                    modeText.setText(nr ? "5G 已开启" : "4G 模式");
                     Toast.makeText(this,
-                            (nr ? "当前允许 5G (NR)\n" : "当前未允许 5G (NR)\n") + result,
+                            (nr ? "当前 5G 已开启\n" : "当前 5G 未开启\n") + "fiveg_user_enable=" + master + "\n" + result,
                             Toast.LENGTH_LONG).show();
                 });
             } catch (Throwable t) {
@@ -364,13 +369,15 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             try {
                 int slot = getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0);
-                String result = CommandBridge.exec(this, NetworkCommands.get(slot));
-                boolean nr = NetworkCommands.hasNr(result);
+                long deadline = SystemClock.elapsedRealtime() + 4000;
+                String result = CommandBridge.exec(this, NetworkCommands.get(slot), deadline);
+                String master = CommandBridge.exec(this, NetworkCommands.getXiaomiFiveGSwitch(), deadline);
+                boolean nr = NetworkCommands.isEffective5gEnabled(result, master);
                 runOnUiThread(() -> {
                     if (switchButton != null && !isFinishing() && !isDestroyed() && !switchPending.get()) {
                         switchButton.setEnabled(true);
                         switchButton.setText(nr ? "切换到 4G" : "切换到 5G");
-                        modeText.setText(nr ? "5G 已允许" : "4G 模式");
+                        modeText.setText(nr ? "5G 已开启" : "4G 模式");
                     }
                 });
             } catch (Throwable t) {
@@ -394,7 +401,7 @@ public class MainActivity extends Activity {
 
         executor.execute(() -> {
             String stage = "连接服务";
-            StringBuilder diagnostic = new StringBuilder("2.2-final App按钮 / SIM ")
+            StringBuilder diagnostic = new StringBuilder("2.3-preview1 App按钮 / SIM ")
                     .append(slot + 1).append("\n").append(new java.util.Date()).append('\n');
             try {
                 long deadline = started + 8000;
@@ -406,14 +413,18 @@ public class MainActivity extends Activity {
                 diagnostic.append("连接完成：")
                         .append(SystemClock.elapsedRealtime() - started).append(" ms\n");
 
-                stage = "读取网络类型";
+                stage = "读取系统 5G 状态";
                 String before = CommandBridge.exec(this, NetworkCommands.get(slot), deadline);
+                String beforeMaster = CommandBridge.exec(this, NetworkCommands.getXiaomiFiveGSwitch(), deadline);
                 long beforeMask = NetworkCommands.parseMask(before);
-                boolean target5g = (beforeMask & NetworkCommands.NR_BIT) == 0;
+                boolean target5g = !NetworkCommands.isEffective5gEnabled(before, beforeMaster);
                 diagnostic.append("读取完成：")
                         .append(SystemClock.elapsedRealtime() - started).append(" ms\n")
-                        .append("切换前：").append(before).append('\n');
+                        .append("切换前网络：").append(before).append('\n')
+                        .append("切换前主开关：").append(beforeMaster).append('\n');
 
+                stage = "写入小米 5G 主开关";
+                CommandBridge.exec(this, NetworkCommands.setXiaomiFiveGSwitch(target5g), deadline);
                 stage = "写入网络模式";
                 CommandBridge.exec(this, NetworkCommands.set5g(slot, beforeMask, target5g), deadline);
                 diagnostic.append("写入完成：")
@@ -423,9 +434,11 @@ public class MainActivity extends Activity {
                 long verifyUntil = Math.min(deadline, SystemClock.elapsedRealtime() + 2000);
                 boolean confirmed = false;
                 String after = "";
+                String afterMaster = "";
                 do {
                     after = CommandBridge.exec(this, NetworkCommands.get(slot), deadline);
-                    if (NetworkCommands.hasNr(after) == target5g) {
+                    afterMaster = CommandBridge.exec(this, NetworkCommands.getXiaomiFiveGSwitch(), deadline);
+                    if (NetworkCommands.isEffective5gEnabled(after, afterMaster) == target5g) {
                         confirmed = true;
                         break;
                     }
@@ -434,7 +447,8 @@ public class MainActivity extends Activity {
                     Thread.sleep(Math.min(150, remaining));
                 } while (SystemClock.elapsedRealtime() < verifyUntil);
 
-                diagnostic.append("切换后：").append(after).append('\n');
+                diagnostic.append("切换后网络：").append(after).append('\n')
+                        .append("切换后主开关：").append(afterMaster).append('\n');
                 if (!confirmed) throw new IllegalStateException("系统尚未确认切换");
                 diagnostic.append("确认完成：")
                         .append(SystemClock.elapsedRealtime() - started).append(" ms\n");
@@ -444,10 +458,10 @@ public class MainActivity extends Activity {
                     if (switchButton != null && !isFinishing() && !isDestroyed()) {
                         switchButton.setText(finalTarget5g ? "切换到 4G" : "切换到 5G");
                         switchButton.setEnabled(true);
-                        modeText.setText(finalTarget5g ? "5G 已允许" : "4G 模式");
+                        modeText.setText(finalTarget5g ? "5G 已开启" : "4G 模式");
                     }
                     Toast.makeText(this,
-                            finalTarget5g ? "已允许 5G" : "已切换到 4G",
+                            finalTarget5g ? "5G 已开启" : "5G 已关闭",
                             Toast.LENGTH_SHORT).show();
                 });
                 requestTileRefresh();

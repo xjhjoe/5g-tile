@@ -10,8 +10,8 @@ android {
         applicationId = "com.example.fivegtile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "2.2-final"
+        versionCode = 10
+        versionName = "2.3-preview1"
     }
 
     buildFeatures {
