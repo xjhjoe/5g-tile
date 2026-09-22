@@ -71,7 +71,7 @@ public class FiveGTileService extends TileService {
 
         CLICK_EXECUTOR.execute(() -> {
             String stage = "连接服务";
-            StringBuilder diagnostic = new StringBuilder("2.2-final / SIM ")
+            StringBuilder diagnostic = new StringBuilder("2.3-preview1 / SIM ")
                     .append(slot + 1).append("\n").append(new java.util.Date()).append('\n');
             try {
                 long deadline = started + 8000;
@@ -82,13 +82,17 @@ public class FiveGTileService extends TileService {
                 }
                 mark(diagnostic, "连接完成", started);
                 postCurrent(request, () -> setWorking("正在切换…"));
-                stage = "读取网络类型";
+                stage = "读取系统 5G 状态";
                 String before = CommandBridge.exec(this, NetworkCommands.get(slot), deadline);
+                String beforeMaster = CommandBridge.exec(this, NetworkCommands.getXiaomiFiveGSwitch(), deadline);
                 long beforeMask = NetworkCommands.parseMask(before);
-                boolean target5g = (beforeMask & NetworkCommands.NR_BIT) == 0;
+                boolean target5g = !NetworkCommands.isEffective5gEnabled(before, beforeMaster);
                 mark(diagnostic, "读取完成", started);
-                diagnostic.append("切换前：").append(before).append('\n');
+                diagnostic.append("切换前网络：").append(before).append('\n')
+                        .append("切换前主开关：").append(beforeMaster).append('\n');
 
+                stage = "写入小米 5G 主开关";
+                CommandBridge.exec(this, NetworkCommands.setXiaomiFiveGSwitch(target5g), deadline);
                 stage = "写入网络模式";
                 // Explicit target is idempotent if the remote process dies mid-call.
                 CommandBridge.exec(this, NetworkCommands.set5g(slot, beforeMask, target5g), deadline);
@@ -98,9 +102,11 @@ public class FiveGTileService extends TileService {
                 long verifyUntil = Math.min(deadline, SystemClock.elapsedRealtime() + 2000);
                 boolean confirmed = false;
                 String after = "";
+                String afterMaster = "";
                 do {
                     after = CommandBridge.exec(this, NetworkCommands.get(slot), deadline);
-                    if (NetworkCommands.hasNr(after) == target5g) {
+                    afterMaster = CommandBridge.exec(this, NetworkCommands.getXiaomiFiveGSwitch(), deadline);
+                    if (NetworkCommands.isEffective5gEnabled(after, afterMaster) == target5g) {
                         confirmed = true;
                         break;
                     }
@@ -109,7 +115,8 @@ public class FiveGTileService extends TileService {
                     Thread.sleep(Math.min(150, remaining));
                 } while (SystemClock.elapsedRealtime() < verifyUntil);
 
-                diagnostic.append("切换后：").append(after).append('\n');
+                diagnostic.append("切换后网络：").append(after).append('\n')
+                        .append("切换后主开关：").append(afterMaster).append('\n');
                 if (!confirmed) {
                     throw new IllegalStateException("系统尚未确认切换；请检查 SIM 或系统网络设置");
                 }
@@ -143,9 +150,10 @@ public class FiveGTileService extends TileService {
         REFRESH_EXECUTOR.execute(() -> {
             try {
                 if (BUSY.get() || destroyed) return;
-                String result = CommandBridge.exec(this, NetworkCommands.get(slot),
-                        SystemClock.elapsedRealtime() + 3000);
-                boolean nr = NetworkCommands.hasNr(result);
+                long deadline = SystemClock.elapsedRealtime() + 3000;
+                String result = CommandBridge.exec(this, NetworkCommands.get(slot), deadline);
+                String master = CommandBridge.exec(this, NetworkCommands.getXiaomiFiveGSwitch(), deadline);
+                boolean nr = NetworkCommands.isEffective5gEnabled(result, master);
                 main.post(() -> {
                     if (!destroyed && request == generation && !BUSY.get()
                             && slot == getSharedPreferences(PREFS, MODE_PRIVATE).getInt("slot", 0)) {
@@ -169,9 +177,9 @@ public class FiveGTileService extends TileService {
         Tile tile = getQsTile();
         if (tile == null) return;
         tile.setState(nrEnabled ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
-        tile.setLabel(nrEnabled ? "5G 已允许" : "5G 已关闭");
+        tile.setLabel(nrEnabled ? "5G 已开启" : "5G 已关闭");
         if (Build.VERSION.SDK_INT >= 29) {
-            tile.setSubtitle(nrEnabled ? "点按关闭 5G" : "点按允许 5G");
+            tile.setSubtitle(nrEnabled ? "点按关闭 5G" : "点按开启 5G");
         }
         tile.updateTile();
     }
