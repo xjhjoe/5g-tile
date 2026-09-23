@@ -47,6 +47,16 @@
             android:textColor="@color/wrong"
             android:textSize="16sp" />
 
+        <Button
+            android:id="@+id/diag_button"
+            style="@android:style/Widget.Material.Button.Borderless"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="20dp"
+            android:layout_marginRight="20dp"
+            android:text="复制 Android 17 诊断"
+            android:textSize="14sp" />
+
         <Switch
             android:id="@+id/screenoff_switch"
             android:layout_width="wrap_content"
