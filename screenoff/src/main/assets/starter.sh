@@ -1,4 +1,4 @@
-pm grant com.tile.screenoff android.permission.WRITE_SECURE_SETTINGS
+pm grant com.tile.screenoff.a17 android.permission.WRITE_SECURE_SETTINGS
 
 file_name="ScreenController.dex"
 
