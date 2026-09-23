@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "FiveGTile"
-include(":app")
+rootProject.name = "ScreenOffA17"
+include(":screenoff")
