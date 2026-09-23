@@ -77,49 +77,66 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
 
     }
 
-    final BroadcastReceiver myReceiver = new BroadcastReceiver() {
+    private long lastOffRequestMs = 0L;
+    private static final long OFF_DEBOUNCE_MS = 800L;
 
+    final BroadcastReceiver binderReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            switch (intent.getAction()) {
-                case "intent.screenoff.sendBinder":
-                    BinderContainer binderContainer = intent.getParcelableExtra("binder");
-                    IBinder binder = binderContainer.getBinder();
-                    //如果binder已经失去活性了，则不再继续解析
-                    if (!binder.pingBinder()) break;
-                    iScreenOff = IScreenOff.Stub.asInterface(binder);
-                    floatWindow();
-                    break;
-                case Intent.ACTION_SCREEN_OFF:
-                    try {
-                         iScreenOff.updateNowScreenState(false);
-                    } catch (RemoteException e) {
-                        e.printStackTrace();
-                    }
-                    view.setKeepScreenOn(false);
-                    listener.disable();
-                    if (exist) windowManager.updateViewLayout(view, params);
-                    break;
-                case Intent.ACTION_SCREEN_ON:
-                case Intent.ACTION_USER_PRESENT:
-                    try {
+            if (!"intent.screenoff.sendBinder".equals(intent.getAction())) return;
+            BinderContainer binderContainer = intent.getParcelableExtra("binder");
+            if (binderContainer == null) return;
+            IBinder binder = binderContainer.getBinder();
+            if (binder == null || !binder.pingBinder()) return;
+            iScreenOff = IScreenOff.Stub.asInterface(binder);
+            recordDiagnostic("Binder", false, "connected");
+            floatWindow();
+        }
+    };
+
+    final BroadcastReceiver screenStateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (iScreenOff == null || intent.getAction() == null) return;
+            try {
+                switch (intent.getAction()) {
+                    case Intent.ACTION_SCREEN_OFF:
+                        iScreenOff.updateNowScreenState(false);
+                        if (view != null) view.setKeepScreenOn(false);
+                        if (listener != null) listener.disable();
+                        if (exist && view != null) windowManager.updateViewLayout(view, params);
+                        recordDiagnostic("System", true, "ACTION_SCREEN_OFF");
+                        break;
+                    case Intent.ACTION_SCREEN_ON:
                         iScreenOff.updateNowScreenState(true);
-                    } catch (RemoteException e) {
-                        e.printStackTrace();
-                    }
-                    break;
+                        recordDiagnostic("System", false, "ACTION_SCREEN_ON");
+                        break;
+                    case Intent.ACTION_USER_PRESENT:
+                        iScreenOff.updateNowScreenState(true);
+                        recordDiagnostic("System", false, "ACTION_USER_PRESENT");
+                        break;
+                }
+            } catch (RemoteException e) {
+                recordDiagnostic("System", false, "state sync failed");
+            }
+        }
+    };
+
+    final BroadcastReceiver localControlReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent.getAction() == null) return;
+            switch (intent.getAction()) {
                 case "action.ScrOff":
-                    screenoff(intent.getBooleanExtra("state", true));
+                    String source = intent.getStringExtra("source");
+                    screenoff(intent.getBooleanExtra("state", true),
+                            source == null ? "Shortcut" : source);
                     break;
                 case "intent.screenoff.exit":
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                        disableSelf();
-                    } else {
-                        stopSelf();
-                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) disableSelf();
+                    else stopSelf();
                     break;
             }
-
         }
     };
 
