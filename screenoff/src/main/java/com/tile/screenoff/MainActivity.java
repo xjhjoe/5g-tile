@@ -105,6 +105,17 @@ public class MainActivity extends Activity {
         }
 
         setButtonsOnclick(isNight, sp);
+        Button diagButton = findViewById(R.id.diag_button);
+        diagButton.setOnClickListener(v -> {
+            String history = sp.getString("diag_history", "还没有诊断记录");
+            String report = "ScreenOff A17 preview1\n"
+                    + Build.MANUFACTURER + " " + Build.MODEL
+                    + " / Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + ")\n\n"
+                    + history;
+            ((ClipboardManager) getSystemService(CLIPBOARD_SERVICE))
+                    .setPrimaryClip(ClipData.newPlainText("ScreenOff 诊断", report));
+            Toast.makeText(this, "诊断已复制", Toast.LENGTH_SHORT).show();
+        });
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(mBroadcastReceiver, new IntentFilter("intent.screenoff.sendBinder"), RECEIVER_EXPORTED);
         } else {
@@ -178,7 +189,7 @@ public class MainActivity extends Activity {
         s8 = findViewById(R.id.s8);
         final String setting = Settings.Secure.getString(getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
         s1.setChecked(setting != null && setting.contains(getPackageName()));
-        s2.setChecked(sp.getBoolean("float", true));
+        s2.setChecked(sp.getBoolean("float", false));
         s3.setChecked(sp.getBoolean("land", false));
         s4.setChecked(!sp.getBoolean("canmove", true));
         s5.setChecked(sp.getBoolean("doubleTap", false));
@@ -230,7 +241,7 @@ public class MainActivity extends Activity {
                 if (s8.isChecked()) showNet();
             } else {
                 ((TextView) findViewById(R.id.title_text)).setText(R.string.shortcutoff);
-                sendBroadcast(new Intent("intent.screenoff.exit"));
+                sendBroadcast(new Intent("intent.screenoff.exit").setPackage(getPackageName()));
             }
 
         });
