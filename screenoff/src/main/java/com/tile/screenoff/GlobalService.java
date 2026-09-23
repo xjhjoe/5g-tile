@@ -186,7 +186,7 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
                 boolean wake = ((orientation >= 360 - sensity || orientation <= sensity) || orientation >= 90 - sensity && orientation <= 90 + sensity) || orientation >= 180 - sensity && orientation <= 180 + sensity || orientation >= 270 - sensity && orientation <= 270 + sensity;
                 //下面是手机旋转准确角度与四个方向角度（0 90 180 270）的转换
                 if (wake) {
-                    screenoff(false);
+                    screenoff(false, "OrientationWake");
                     this.disable();
                 }
             }
@@ -240,7 +240,7 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
                         params.alpha = 1;
                         new Handler().postDelayed(() -> {
                             if (System.currentTimeMillis() - lastUp >= 400 && !moved) {
-                                screenoff(true);
+                                screenoff(true, "FloatingLongPress");
                             }
                         }, 400);
                         break;
@@ -273,7 +273,7 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
                     case MotionEvent.ACTION_DOWN:
                     case MotionEvent.ACTION_OUTSIDE:
                         if (System.currentTimeMillis() - lastDown <= 400)
-                            screenoff(false);
+                            screenoff(false, "FloatingDoubleTap");
                         lastDown = System.currentTimeMillis();
                         break;
                 }
@@ -284,34 +284,80 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
         floatWindow();
 
 
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(Intent.ACTION_SCREEN_OFF);
-        filter.addAction(Intent.ACTION_SCREEN_ON);
-        filter.addAction(Intent.ACTION_USER_PRESENT);
-        filter.addAction("action.ScrOff");
-        filter.addAction("intent.screenoff.sendBinder");
-        filter.addAction("intent.screenoff.exit");
+        IntentFilter screenFilter = new IntentFilter();
+        screenFilter.addAction(Intent.ACTION_SCREEN_OFF);
+        screenFilter.addAction(Intent.ACTION_SCREEN_ON);
+        screenFilter.addAction(Intent.ACTION_USER_PRESENT);
+        registerReceiver(screenStateReceiver, screenFilter);
+
+        IntentFilter localFilter = new IntentFilter();
+        localFilter.addAction("action.ScrOff");
+        localFilter.addAction("intent.screenoff.exit");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(myReceiver, new IntentFilter("intent.screenoff.sendBinder"), RECEIVER_EXPORTED);
+            registerReceiver(localControlReceiver, localFilter, RECEIVER_NOT_EXPORTED);
+            registerReceiver(binderReceiver, new IntentFilter("intent.screenoff.sendBinder"), RECEIVER_EXPORTED);
         } else {
-            registerReceiver(myReceiver, new IntentFilter("intent.screenoff.sendBinder"));
+            registerReceiver(localControlReceiver, localFilter);
+            registerReceiver(binderReceiver, new IntentFilter("intent.screenoff.sendBinder"));
         }
         sp.registerOnSharedPreferenceChangeListener(this);
     }
 
 
     void screenoff(Boolean bb) {
-        try {
-            if (iScreenOff.getNowScreenState() == 0) return;
-            iScreenOff.setPowerMode(bb);
-            view.setKeepScreenOn(bb);
-            if (shake && bb) listener.enable();
-        } catch (RemoteException e) {
-            e.printStackTrace();
-        }
-
+        screenoff(bb, "Unknown");
     }
 
+    void screenoff(Boolean bb, String source) {
+        if (iScreenOff == null) {
+            recordDiagnostic(source, bb, "ignored: service not ready");
+            return;
+        }
+        try {
+            int beforeState = iScreenOff.getNowScreenState();
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            boolean interactive = pm == null || pm.isInteractive();
+
+            if (bb) {
+                if (!interactive || beforeState == 0) {
+                    recordDiagnostic(source, true, "ignored: already non-interactive, state=" + beforeState);
+                    return;
+                }
+                if (beforeState == 2) {
+                    recordDiagnostic(source, true, "ignored: already special-off");
+                    return;
+                }
+                long now = SystemClock.elapsedRealtime();
+                if (now - lastOffRequestMs < OFF_DEBOUNCE_MS) {
+                    recordDiagnostic(source, true, "ignored: duplicate");
+                    return;
+                }
+                lastOffRequestMs = now;
+            }
+
+            iScreenOff.setPowerMode(bb);
+            if (view != null) view.setKeepScreenOn(bb);
+            if (shake && bb && listener != null) listener.enable();
+            int afterState = iScreenOff.getNowScreenState();
+            recordDiagnostic(source, bb, "executed: interactive=" + interactive
+                    + ", before=" + beforeState + ", after=" + afterState);
+        } catch (RemoteException ex) {
+            recordDiagnostic(source, bb, "RemoteException");
+        }
+    }
+
+    private void recordDiagnostic(String source, boolean off, String detail) {
+        if (sp == null) return;
+        String entry = new java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.US)
+                .format(new java.util.Date())
+                + " | " + (off ? "OFF" : "ON")
+                + " | " + source + " | " + detail;
+        String old = sp.getString("diag_history", "");
+        String history = entry + (old.isEmpty() ? "" : "\n" + old);
+        if (history.length() > 6000) history = history.substring(0, 6000);
+        sp.edit().putString("diag_history", history).apply();
+        Log.i("ScreenOffDiag", entry);
+    }
 
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
@@ -322,11 +368,11 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
             final int keycode = event.getKeyCode();
             final int nowState = iScreenOff.getNowScreenState();
             if (keycode == scrOffKey && nowState == 1) {
-                screenoff(true);
+                screenoff(true, "VolumeKey");
                 return true;
             }
             if (keycode == scrOnKey && nowState == 2) {
-                screenoff(false);
+                screenoff(false, "VolumeKey");
                 return true;
             }
         } catch (RemoteException e) {
@@ -444,11 +490,11 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
             try {
                 switch (target.substring(0, 3)) {
                     case "/1?":
-                        iScreenOff.setPowerMode(false);
+                        screenoff(false, "NetworkControl");
                         outputHtml("", "200 OK");
                         break;
                     case "/2?":
-                        iScreenOff.setPowerMode(true);
+                        screenoff(true, "NetworkControl");
                         outputHtml("", "200 OK");
                         break;
                     default:
