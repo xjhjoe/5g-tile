@@ -1,4 +1,4 @@
-package com.tile.screenoff.a17;
+package com.tile.screenoff;
 
 interface IScreenOff {
 
