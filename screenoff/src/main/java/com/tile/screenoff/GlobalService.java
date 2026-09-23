@@ -18,6 +18,8 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.os.PowerManager;
+import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.TypedValue;
@@ -318,7 +320,7 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
     }
 
     public void floatWindow() {
-        if (sp.getBoolean("float", true)) {
+        if (sp.getBoolean("float", false)) {
             if (!exist) {
                 windowManager.addView(view, params);
                 exist = true;
@@ -363,7 +365,9 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
 
     @Override
     public void onDestroy() {
-        unregisterReceiver(myReceiver);
+        try { unregisterReceiver(screenStateReceiver); } catch (Exception ignored) {}
+        try { unregisterReceiver(localControlReceiver); } catch (Exception ignored) {}
+        try { unregisterReceiver(binderReceiver); } catch (Exception ignored) {}
         try {
             windowManager.removeViewImmediate(view);
         } catch (Exception ignored) {
