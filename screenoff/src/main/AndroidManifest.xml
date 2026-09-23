@@ -11,8 +11,8 @@
     <uses-sdk tools:overrideLibrary="rikka.shizuku.provider,rikka.shizuku.api,rikka.shizuku.shared,rikka.shizuku.aidl" />
 
     <application
-        android:icon="@mipmap/icon"
-        android:label="@string/shortcutoff"
+        android:icon="@drawable/icon"
+        android:label="熄屏运行 A17"
         android:theme="@style/AppTheme">
         <activity
             android:name=".MainActivity"
