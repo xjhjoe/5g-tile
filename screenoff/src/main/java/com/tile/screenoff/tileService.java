@@ -11,7 +11,7 @@ public class tileService extends TileService {
     @Override
     public void onClick() {
         if (getQsTile() == null) return;
-        startActivityAndCollapse(new Intent(tileService.this,ScrOff.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        startActivityAndCollapse(new Intent(tileService.this,ScrOff.class).putExtra("source", "QuickTile").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         super.onClick();
     }
 
