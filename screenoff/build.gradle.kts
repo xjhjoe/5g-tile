@@ -2,7 +2,7 @@ plugins {
     id("com.android.application")
 }
 android {
-    namespace = "com.tile.screenoff.a17"
+    namespace = "com.tile.screenoff"
     compileSdk = 35
     defaultConfig {
         applicationId = "com.tile.screenoff.a17"
