@@ -250,7 +250,7 @@ public class ScreenController {
             //把binder填到一个可以用Intent来传递的容器中
             BinderContainer binderContainer = new BinderContainer(binder);
             // 创建 Intent 对象，并将binder作为附加参数
-            intent = new Intent("intent.screenoff.sendBinder");
+            intent = new Intent("intent.screenoff.sendBinder").setPackage("com.tile.screenoff.a17");
             intent.putExtra("binder", binderContainer);
 
             // 获取 IActivityManager 类
