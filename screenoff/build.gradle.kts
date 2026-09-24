@@ -8,8 +8,8 @@ android {
         applicationId = "com.tile.screenoff.a17"
         minSdk = 21
         targetSdk = 35
-        versionCode = 22
-        versionName = "22-a17-preview1"
+        versionCode = 23
+        versionName = "23-a17-preview2"
     }
     buildFeatures { aidl = true }
     buildTypes { release { isMinifyEnabled = false } }
