@@ -104,23 +104,6 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
     private long lastOffRequestMs = 0L;
     private static final long OFF_DEBOUNCE_MS = 800L;
 
-    final BroadcastReceiver binderReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (!"intent.screenoff.sendBinder".equals(intent.getAction())) return;
-            BinderContainer binderContainer = intent.getParcelableExtra("binder");
-            if (binderContainer == null) return;
-            IBinder binder = binderContainer.getBinder();
-            if (binder == null || !binder.pingBinder()) return;
-            iScreenOff = IScreenOff.Stub.asInterface(binder);
-            autoStartHandler.removeCallbacksAndMessages(null);
-            autoStartInFlight = false;
-            autoStartAttempt = autoStartDelays.length;
-            recordDiagnostic("Binder", false, "connected");
-            floatWindow();
-        }
-    };
-
     final BroadcastReceiver screenStateReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -334,75 +317,6 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
                 ScreenOffBridge.isShizukuReady() ? "binding requested" : "Nightzuku/Shizuku not ready");
     }
 
-
-    private void scheduleAutoStart() {
-        if (isControllerConnected() || autoStartInFlight) return;
-        int index = Math.min(autoStartAttempt, autoStartDelays.length - 1);
-        long delay = autoStartDelays[index];
-        autoStartAttempt++;
-        autoStartHandler.postDelayed(() -> {
-            if (isControllerConnected()) return;
-            boolean started = tryStartControllerWithShizuku();
-            recordDiagnostic("AutoStart", false, started
-                    ? "start command sent, attempt=" + autoStartAttempt
-                    : "Nightzuku/Shizuku not ready, attempt=" + autoStartAttempt);
-            autoStartInFlight = false;
-            if (!isControllerConnected()) scheduleAutoStart();
-        }, delay);
-    }
-
-    private boolean isControllerConnected() {
-        try {
-            return iScreenOff != null && iScreenOff.asBinder() != null && iScreenOff.asBinder().pingBinder();
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    private boolean tryStartControllerWithShizuku() {
-        if (autoStartInFlight) return false;
-        autoStartInFlight = true;
-        try {
-            if (!Shizuku.pingBinder()) return false;
-            if (Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) return false;
-            prepareControllerFiles();
-            Process p = Shizuku.newProcess(new String[]{"sh"}, null, null);
-            OutputStream out = p.getOutputStream();
-            out.write(("sh " + getExternalFilesDir(null).getPath() + "/starter.sh\nexit\n").getBytes());
-            out.flush();
-            out.close();
-            return true;
-        } catch (Throwable t) {
-            recordDiagnostic("AutoStart", false, "failed: " + t.getClass().getSimpleName());
-            return false;
-        }
-    }
-
-    private void prepareControllerFiles() throws IOException {
-        String dir = getExternalFilesDir(null).getPath();
-        try (InputStream is = getAssets().open("starter.sh");
-             FileOutputStream fos = new FileOutputStream(dir + "/starter.sh")) {
-            byte[] buffer = new byte[4096];
-            int read;
-            while ((read = is.read(buffer)) != -1) fos.write(buffer, 0, read);
-        }
-
-        try (ZipFile zip = new ZipFile(getPackageResourcePath())) {
-            Enumeration<? extends ZipEntry> entries = zip.entries();
-            while (entries.hasMoreElements()) {
-                ZipEntry entry = entries.nextElement();
-                if (!"classes.dex".equals(entry.getName())) continue;
-                try (InputStream is = zip.getInputStream(entry);
-                     FileOutputStream fos = new FileOutputStream(dir + "/ScreenController.dex")) {
-                    byte[] buffer = new byte[4096];
-                    int read;
-                    while ((read = is.read(buffer)) != -1) fos.write(buffer, 0, read);
-                }
-                return;
-            }
-        }
-        throw new IOException("classes.dex not found");
-    }
 
     void screenoff(Boolean bb) {
         screenoff(bb, "Unknown");
