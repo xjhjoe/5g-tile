@@ -108,10 +108,13 @@ public class MainActivity extends Activity {
         Button diagButton = findViewById(R.id.diag_button);
         diagButton.setOnClickListener(v -> {
             String history = sp.getString("diag_history", "还没有诊断记录");
+            String controllerLog = readTextFile(new java.io.File(getExternalFilesDir(null), "controller_start.log"));
             String report = "ScreenOff A17 preview3\n"
                     + Build.MANUFACTURER + " " + Build.MODEL
                     + " / Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + ")\n\n"
-                    + history;
+                    + history
+                    + "\n\n===== Controller start log =====\n"
+                    + (controllerLog.isEmpty() ? "还没有启动日志" : controllerLog);
             ((ClipboardManager) getSystemService(CLIPBOARD_SERVICE))
                     .setPrimaryClip(ClipData.newPlainText("ScreenOff 诊断", report));
             Toast.makeText(this, "诊断已复制", Toast.LENGTH_SHORT).show();
@@ -125,6 +128,16 @@ public class MainActivity extends Activity {
 
     }
 
+
+    private String readTextFile(java.io.File file) {
+        if (file == null || !file.exists()) return "";
+        StringBuilder sb = new StringBuilder();
+        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(file))) {
+            String line;
+            while ((line = br.readLine()) != null) sb.append(line).append('\n');
+        } catch (IOException ignored) {}
+        return sb.toString();
+    }
 
     private void showNet() {
         String[] i = new String[]{"wlan: ", "eth: ", "usb: ", "p2p: ", "lo: ", "unknown: "};
