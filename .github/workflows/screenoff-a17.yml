@@ -1,0 +1,32 @@
+name: Build ScreenOff A17 APK
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Build preview APK
+        run: gradle :screenoff:assembleDebug :screenoff:lintDebug --stacktrace
+      - name: Verify package
+        run: |
+          APK="screenoff/build/outputs/apk/debug/screenoff-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | head -20
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScreenOff-A17-preview1
+          path: screenoff/build/outputs/apk/debug/screenoff-debug.apk
+          if-no-files-found: error
