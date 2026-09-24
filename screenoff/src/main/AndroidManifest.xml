@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
 
     <uses-sdk tools:overrideLibrary="rikka.shizuku.provider,rikka.shizuku.api,rikka.shizuku.shared,rikka.shizuku.aidl" />
 
@@ -14,6 +15,9 @@
         android:icon="@drawable/icon"
         android:label="熄屏运行 A17"
         android:theme="@style/AppTheme">
+        <meta-data
+            android:name="moe.shizuku.client.V3_SUPPORT"
+            android:value="true" />
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|keyboard|keyboardHidden"
