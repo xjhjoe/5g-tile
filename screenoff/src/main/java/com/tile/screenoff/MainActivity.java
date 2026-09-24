@@ -62,6 +62,19 @@ public class MainActivity extends Activity {
     private boolean isExpand = false, isServiceOK = false, isPermissionResultListenerRegistered = false;
     private int scrOffKey, scrOnKey;
     public IScreenOff iScreenOff = null;
+    private final ScreenOffBridge.Listener bridgeListener = service -> runOnUiThread(() -> {
+        iScreenOff = service;
+        if (service != null) {
+            enableScreenOffFunctions();
+        } else {
+            isServiceOK = false;
+            Button button = findViewById(R.id.activate_button);
+            if (button != null) {
+                button.setText("点我重新连接熄屏服务");
+                button.setOnClickListener(v -> activateUserService());
+            }
+        }
+    });
     private final BroadcastReceiver mBroadcastReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -109,7 +122,7 @@ public class MainActivity extends Activity {
         diagButton.setOnClickListener(v -> {
             String history = sp.getString("diag_history", "还没有诊断记录");
             String controllerLog = readTextFile(new java.io.File(getExternalFilesDir(null), "controller_start.log"));
-            String report = "ScreenOff A17 preview3\n"
+            String report = "ScreenOff A17 preview4\n"
                     + Build.MANUFACTURER + " " + Build.MODEL
                     + " / Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + ")\n\n"
                     + history
@@ -124,6 +137,8 @@ public class MainActivity extends Activity {
         } else {
             registerReceiver(mBroadcastReceiver, new IntentFilter("intent.screenoff.sendBinder"));
         }
+        ScreenOffBridge.addListener(bridgeListener);
+        ScreenOffBridge.warmUp(this);
         super.onCreate(savedInstanceState);
 
     }
@@ -410,7 +425,7 @@ public class MainActivity extends Activity {
         });
         findViewById(R.id.title_text).setOnClickListener(view -> help());
         float density = getResources().getDisplayMetrics().density;
-        findViewById(R.id.activate_button).setOnClickListener(view -> showActivate());
+        findViewById(R.id.activate_button).setOnClickListener(view -> activateUserService());
         ShapeDrawable oval = new ShapeDrawable(new RoundRectShape(new float[]{30 * density, 30 * density, 30 * density, 30 * density, 0, 0, 0, 0}, null, null));
         oval.getPaint().setColor(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? getColor(isNight ? R.color.bgBlack : R.color.bgWhite) : (isNight ? 0xff303034 : 0xffe4e2e6));
         linearLayout.setBackground(oval);
@@ -522,15 +537,8 @@ public class MainActivity extends Activity {
             }
         }
         if (b && c) {
-            try {
-                Process p = Shizuku.newProcess(new String[]{"sh"}, null, null);
-                OutputStream out = p.getOutputStream();
-                out.write(("sh " + getExternalFilesDir(null).getPath() + "/starter.sh\nexit\n").getBytes());
-                out.flush();
-                out.close();
-            } catch (IOException ioException) {
-                Toast.makeText(this, "激活失败", Toast.LENGTH_SHORT).show();
-            }
+            ScreenOffBridge.warmUp(this);
+            Toast.makeText(this, "正在连接熄屏服务", Toast.LENGTH_SHORT).show();
         }
 
     }
@@ -550,6 +558,7 @@ public class MainActivity extends Activity {
     //一些收尾工作，取消注册监听器什么的
     @Override
     protected void onDestroy() {
+        ScreenOffBridge.removeListener(bridgeListener);
         if (isPermissionResultListenerRegistered) Shizuku.removeRequestPermissionResultListener(RL);
         unregisterReceiver(mBroadcastReceiver);
         super.onDestroy();
@@ -565,6 +574,28 @@ public class MainActivity extends Activity {
                 .setMessage(R.string.help_conntent)
                 .setNegativeButton(R.string.understand, null)
                 .show();
+    }
+
+    private void activateUserService() {
+        try {
+            if (!Shizuku.pingBinder()) {
+                Toast.makeText(this, "Nightzuku / Shizuku 未运行", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                if (!isPermissionResultListenerRegistered) {
+                    Shizuku.addRequestPermissionResultListener(RL);
+                    isPermissionResultListenerRegistered = true;
+                }
+                Shizuku.requestPermission(0);
+                Toast.makeText(this, "请允许 Nightzuku / Shizuku 授权", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            ScreenOffBridge.warmUp(this);
+            Toast.makeText(this, "正在连接熄屏服务", Toast.LENGTH_SHORT).show();
+        } catch (Throwable t) {
+            Toast.makeText(this, "连接失败: " + t.getClass().getSimpleName(), Toast.LENGTH_SHORT).show();
+        }
     }
 
     public void showActivate() {
