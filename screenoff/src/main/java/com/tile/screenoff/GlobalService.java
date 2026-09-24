@@ -16,6 +16,7 @@ import android.graphics.drawable.ShapeDrawable;
 import android.graphics.drawable.shapes.OvalShape;
 import android.os.Build;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.PowerManager;
@@ -34,9 +35,14 @@ import android.widget.ImageView;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Enumeration;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -54,6 +60,15 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
     private int SCREEN_WIDTH, SCREEN_HEIGHT;
     OrientationEventListener listener;
     IScreenOff iScreenOff = null;
+    private final Handler autoStartHandler = new Handler(Looper.getMainLooper());
+    private boolean autoStartInFlight = false;
+    private int autoStartAttempt = 0;
+    private final long[] autoStartDelays = new long[]{0L, 2000L, 5000L, 10000L, 30000L};
+    private final Shizuku.OnBinderReceivedListener shizukuBinderReceivedListener = () -> {
+        recordDiagnostic("AutoStart", false, "Nightzuku/Shizuku binder available");
+        autoStartAttempt = 0;
+        scheduleAutoStart();
+    };
 
 
     public static boolean isScreenOffServiceRunning(Context context) {
@@ -89,6 +104,9 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
             IBinder binder = binderContainer.getBinder();
             if (binder == null || !binder.pingBinder()) return;
             iScreenOff = IScreenOff.Stub.asInterface(binder);
+            autoStartHandler.removeCallbacksAndMessages(null);
+            autoStartInFlight = false;
+            autoStartAttempt = autoStartDelays.length;
             recordDiagnostic("Binder", false, "connected");
             floatWindow();
         }
@@ -301,8 +319,79 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
             registerReceiver(binderReceiver, new IntentFilter("intent.screenoff.sendBinder"));
         }
         sp.registerOnSharedPreferenceChangeListener(this);
+        Shizuku.addBinderReceivedListenerSticky(shizukuBinderReceivedListener);
+        scheduleAutoStart();
     }
 
+
+    private void scheduleAutoStart() {
+        if (isControllerConnected() || autoStartInFlight) return;
+        int index = Math.min(autoStartAttempt, autoStartDelays.length - 1);
+        long delay = autoStartDelays[index];
+        autoStartAttempt++;
+        autoStartHandler.postDelayed(() -> {
+            if (isControllerConnected()) return;
+            boolean started = tryStartControllerWithShizuku();
+            recordDiagnostic("AutoStart", false, started
+                    ? "start command sent, attempt=" + autoStartAttempt
+                    : "Nightzuku/Shizuku not ready, attempt=" + autoStartAttempt);
+            autoStartInFlight = false;
+            if (!isControllerConnected()) scheduleAutoStart();
+        }, delay);
+    }
+
+    private boolean isControllerConnected() {
+        try {
+            return iScreenOff != null && iScreenOff.asBinder() != null && iScreenOff.asBinder().pingBinder();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private boolean tryStartControllerWithShizuku() {
+        if (autoStartInFlight) return false;
+        autoStartInFlight = true;
+        try {
+            if (!Shizuku.pingBinder()) return false;
+            if (Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) return false;
+            prepareControllerFiles();
+            Process p = Shizuku.newProcess(new String[]{"sh"}, null, null);
+            OutputStream out = p.getOutputStream();
+            out.write(("sh " + getExternalFilesDir(null).getPath() + "/starter.sh\nexit\n").getBytes());
+            out.flush();
+            out.close();
+            return true;
+        } catch (Throwable t) {
+            recordDiagnostic("AutoStart", false, "failed: " + t.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    private void prepareControllerFiles() throws IOException {
+        String dir = getExternalFilesDir(null).getPath();
+        try (InputStream is = getAssets().open("starter.sh");
+             FileOutputStream fos = new FileOutputStream(dir + "/starter.sh")) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = is.read(buffer)) != -1) fos.write(buffer, 0, read);
+        }
+
+        try (ZipFile zip = new ZipFile(getPackageResourcePath())) {
+            Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (!"classes.dex".equals(entry.getName())) continue;
+                try (InputStream is = zip.getInputStream(entry);
+                     FileOutputStream fos = new FileOutputStream(dir + "/ScreenController.dex")) {
+                    byte[] buffer = new byte[4096];
+                    int read;
+                    while ((read = is.read(buffer)) != -1) fos.write(buffer, 0, read);
+                }
+                return;
+            }
+        }
+        throw new IOException("classes.dex not found");
+    }
 
     void screenoff(Boolean bb) {
         screenoff(bb, "Unknown");
@@ -428,6 +517,8 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
 
     @Override
     public void onDestroy() {
+        autoStartHandler.removeCallbacksAndMessages(null);
+        try { Shizuku.removeBinderReceivedListener(shizukuBinderReceivedListener); } catch (Throwable ignored) {}
         try { unregisterReceiver(screenStateReceiver); } catch (Exception ignored) {}
         try { unregisterReceiver(localControlReceiver); } catch (Exception ignored) {}
         try { unregisterReceiver(binderReceiver); } catch (Exception ignored) {}
