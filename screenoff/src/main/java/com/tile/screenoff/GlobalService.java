@@ -15,6 +15,7 @@ import android.graphics.PixelFormat;
 import android.graphics.drawable.ShapeDrawable;
 import android.graphics.drawable.shapes.OvalShape;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.PowerManager;
