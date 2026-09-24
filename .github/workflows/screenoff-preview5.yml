@@ -25,7 +25,9 @@ jobs:
       - name: Use runner Android SDK
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -n 1)"
+          echo "SDKMANAGER=$SDKMANAGER"
+          test -n "$SDKMANAGER"
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
