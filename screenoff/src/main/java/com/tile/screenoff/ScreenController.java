@@ -245,6 +245,11 @@ public class ScreenController {
                     System.exit(0);
                 }
 
+                @Override
+                public void destroy() throws RemoteException {
+                    closeAndExit();
+                }
+
             };
 
             //把binder填到一个可以用Intent来传递的容器中
