@@ -5,13 +5,11 @@ import android.animation.ObjectAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Service;
-import android.content.BroadcastReceiver;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
@@ -21,7 +19,6 @@ import android.graphics.drawable.shapes.RoundRectShape;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.RemoteException;
 import android.provider.Settings;
@@ -42,19 +39,13 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.DataOutputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.util.Enumeration;
 import java.util.Locale;
 import java.util.regex.Pattern;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 import rikka.shizuku.Shizuku;
 
@@ -75,17 +66,7 @@ public class MainActivity extends Activity {
             }
         }
     });
-    private final BroadcastReceiver mBroadcastReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            BinderContainer binderContainer = intent.getParcelableExtra("binder");
-            IBinder binder = binderContainer.getBinder();
-            //如果binder已经失去活性了，则不再继续解析
-            if (!binder.pingBinder()) return;
-            iScreenOff = IScreenOff.Stub.asInterface(binder);
-            enableScreenOffFunctions();
-        }
-    };
+
 
 
     @Override
@@ -121,38 +102,23 @@ public class MainActivity extends Activity {
         Button diagButton = findViewById(R.id.diag_button);
         diagButton.setOnClickListener(v -> {
             String history = sp.getString("diag_history", "还没有诊断记录");
-            String controllerLog = readTextFile(new java.io.File(getExternalFilesDir(null), "controller_start.log"));
+            String backend = ScreenOffBridge.current() != null ? "UserService connected" :
+                    (ScreenOffBridge.isShizukuReady() ? "Nightzuku ready / UserService disconnected" : "Nightzuku unavailable");
             String report = "ScreenOff A17 preview4\n"
                     + Build.MANUFACTURER + " " + Build.MODEL
-                    + " / Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + ")\n\n"
-                    + history
-                    + "\n\n===== Controller start log =====\n"
-                    + (controllerLog.isEmpty() ? "还没有启动日志" : controllerLog);
+                    + " / Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + ")\n"
+                    + "Backend: " + backend + "\n\n"
+                    + history;
             ((ClipboardManager) getSystemService(CLIPBOARD_SERVICE))
                     .setPrimaryClip(ClipData.newPlainText("ScreenOff 诊断", report));
             Toast.makeText(this, "诊断已复制", Toast.LENGTH_SHORT).show();
         });
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(mBroadcastReceiver, new IntentFilter("intent.screenoff.sendBinder"), RECEIVER_EXPORTED);
-        } else {
-            registerReceiver(mBroadcastReceiver, new IntentFilter("intent.screenoff.sendBinder"));
-        }
         ScreenOffBridge.addListener(bridgeListener);
         ScreenOffBridge.warmUp(this);
         super.onCreate(savedInstanceState);
 
     }
 
-
-    private String readTextFile(java.io.File file) {
-        if (file == null || !file.exists()) return "";
-        StringBuilder sb = new StringBuilder();
-        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(file))) {
-            String line;
-            while ((line = br.readLine()) != null) sb.append(line).append('\n');
-        } catch (IOException ignored) {}
-        return sb.toString();
-    }
 
     private void showNet() {
         String[] i = new String[]{"wlan: ", "eth: ", "usb: ", "p2p: ", "lo: ", "unknown: "};
@@ -476,7 +442,7 @@ public class MainActivity extends Activity {
         button.setOnClickListener(null);
         button.setOnLongClickListener(view -> {
             try {
-                sendBroadcast(new Intent("intent.screenoff.exit"));
+                sendBroadcast(new Intent("intent.screenoff.exit").setPackage(getPackageName()));
                 iScreenOff.closeAndExit();
             } catch (RemoteException e) {
                 e.printStackTrace();
@@ -560,7 +526,6 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         ScreenOffBridge.removeListener(bridgeListener);
         if (isPermissionResultListenerRegistered) Shizuku.removeRequestPermissionResultListener(RL);
-        unregisterReceiver(mBroadcastReceiver);
         super.onDestroy();
     }
 
@@ -598,75 +563,5 @@ public class MainActivity extends Activity {
         }
     }
 
-    public void showActivate() {
-        unzipFiles();
-        final String command = "sh " + getExternalFilesDir(null).getPath() + "/starter.sh";
-        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this)
-                .setMessage(String.format(getString(R.string.active_steps), command))
-                .setTitle(R.string.need_active)
-                .setNeutralButton(R.string.copy_cmd, (dialogInterface, i) -> {
-                    ((ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("c", "adb shell " + command));
-                    Toast.makeText(MainActivity.this, String.format(getString(R.string.cmd_copy_finish), command), Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton(R.string.by_root, (dialoginterface, i) -> {
-                    Process p;
-                    try {
-                        p = Runtime.getRuntime().exec("su");
-                        DataOutputStream o = new DataOutputStream(p.getOutputStream());
-                        o.writeBytes(command);
-                        o.flush();
-                        o.close();
-                    } catch (IOException ignored) {
-                        Toast.makeText(MainActivity.this, R.string.active_failed, Toast.LENGTH_SHORT).show();
-                    }
-                });
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-            builder.setPositiveButton(R.string.by_shizuku, (dialogInterface, i) -> check());
-        builder.show();
-    }
 
-    private void unzipFiles() {
-
-        String file1 = getExternalFilesDir(null).getPath() + "/starter.sh";
-        try {
-            InputStream is = getAssets().open("starter.sh");
-            FileOutputStream fileOutputStream = new FileOutputStream(file1);
-            byte[] buffer = new byte[1024];
-            int byteRead;
-            while (-1 != (byteRead = is.read(buffer))) {
-                fileOutputStream.write(buffer, 0, byteRead);
-            }
-            is.close();
-            fileOutputStream.flush();
-            fileOutputStream.close();
-        } catch (IOException ignored) {
-        }
-        String file2 = getExternalFilesDir(null).getPath() + "/ScreenController.dex";
-        try {
-            ZipFile zipFile = new ZipFile(getPackageResourcePath());
-            // 遍历zip文件中的所有条目
-            Enumeration<? extends ZipEntry> entries = zipFile.entries();
-            while (entries.hasMoreElements()) {
-                ZipEntry entry = entries.nextElement();
-
-                // 如果条目名称为classes.dex，则解压该条目到指定目录
-                if (entry.getName().equals("classes.dex")) {
-                    InputStream inputStream = zipFile.getInputStream(entry);
-                    FileOutputStream fos = new FileOutputStream(file2);
-                    byte[] buffer = new byte[1024];
-                    int len;
-                    while ((len = inputStream.read(buffer)) > 0) {
-                        fos.write(buffer, 0, len);
-                    }
-                    fos.close();
-                    break;
-                }
-            }
-
-            // 关闭ZipFile对象
-            zipFile.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
 }
