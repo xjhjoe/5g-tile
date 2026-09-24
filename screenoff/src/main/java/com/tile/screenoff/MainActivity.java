@@ -108,7 +108,7 @@ public class MainActivity extends Activity {
         Button diagButton = findViewById(R.id.diag_button);
         diagButton.setOnClickListener(v -> {
             String history = sp.getString("diag_history", "还没有诊断记录");
-            String report = "ScreenOff A17 preview2\n"
+            String report = "ScreenOff A17 preview3\n"
                     + Build.MANUFACTURER + " " + Build.MODEL
                     + " / Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + ")\n\n"
                     + history;
