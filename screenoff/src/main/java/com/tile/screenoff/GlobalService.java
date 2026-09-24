@@ -15,8 +15,6 @@ import android.graphics.PixelFormat;
 import android.graphics.drawable.ShapeDrawable;
 import android.graphics.drawable.shapes.OvalShape;
 import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.PowerManager;
@@ -46,7 +44,6 @@ import java.util.zip.ZipFile;
 import java.util.Locale;
 import java.util.Objects;
 
-import rikka.shizuku.Shizuku;
 
 public class GlobalService extends AccessibilityService implements SharedPreferences.OnSharedPreferenceChangeListener {
 
@@ -68,15 +65,6 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
         } else {
             recordDiagnostic("UserService", false, "disconnected");
         }
-    };
-    private final Handler autoStartHandler = new Handler(Looper.getMainLooper());
-    private boolean autoStartInFlight = false;
-    private int autoStartAttempt = 0;
-    private final long[] autoStartDelays = new long[]{0L, 2000L, 5000L, 10000L, 30000L};
-    private final Shizuku.OnBinderReceivedListener shizukuBinderReceivedListener = () -> {
-        recordDiagnostic("AutoStart", false, "Nightzuku/Shizuku binder available");
-        autoStartAttempt = 0;
-        scheduleAutoStart();
     };
 
 
@@ -305,10 +293,8 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
         localFilter.addAction("intent.screenoff.exit");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(localControlReceiver, localFilter, RECEIVER_NOT_EXPORTED);
-            registerReceiver(binderReceiver, new IntentFilter("intent.screenoff.sendBinder"), RECEIVER_EXPORTED);
         } else {
             registerReceiver(localControlReceiver, localFilter);
-            registerReceiver(binderReceiver, new IntentFilter("intent.screenoff.sendBinder"));
         }
         sp.registerOnSharedPreferenceChangeListener(this);
         ScreenOffBridge.addListener(bridgeListener);
@@ -443,11 +429,8 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
     @Override
     public void onDestroy() {
         ScreenOffBridge.removeListener(bridgeListener);
-        autoStartHandler.removeCallbacksAndMessages(null);
-        try { Shizuku.removeBinderReceivedListener(shizukuBinderReceivedListener); } catch (Throwable ignored) {}
         try { unregisterReceiver(screenStateReceiver); } catch (Exception ignored) {}
         try { unregisterReceiver(localControlReceiver); } catch (Exception ignored) {}
-        try { unregisterReceiver(binderReceiver); } catch (Exception ignored) {}
         try {
             windowManager.removeViewImmediate(view);
         } catch (Exception ignored) {
