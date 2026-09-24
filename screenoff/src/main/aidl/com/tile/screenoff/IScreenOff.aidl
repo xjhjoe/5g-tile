@@ -1,13 +1,9 @@
 package com.tile.screenoff;
 
 interface IScreenOff {
-
-    void setPowerMode(boolean turnOff);
-
-    void updateNowScreenState(boolean isScreenOn);
-
-    int getNowScreenState();
-
-    void closeAndExit();
-
+    void destroy() = 16777114;
+    void setPowerMode(boolean turnOff) = 1;
+    void updateNowScreenState(boolean isScreenOn) = 2;
+    int getNowScreenState() = 3;
+    void closeAndExit() = 4;
 }
