@@ -60,6 +60,15 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
     private int SCREEN_WIDTH, SCREEN_HEIGHT;
     OrientationEventListener listener;
     IScreenOff iScreenOff = null;
+    private final ScreenOffBridge.Listener bridgeListener = service -> {
+        iScreenOff = service;
+        if (service != null) {
+            recordDiagnostic("UserService", false, "connected via Nightzuku/Shizuku");
+            try { floatWindow(); } catch (Throwable ignored) {}
+        } else {
+            recordDiagnostic("UserService", false, "disconnected");
+        }
+    };
     private final Handler autoStartHandler = new Handler(Looper.getMainLooper());
     private boolean autoStartInFlight = false;
     private int autoStartAttempt = 0;
@@ -319,8 +328,10 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
             registerReceiver(binderReceiver, new IntentFilter("intent.screenoff.sendBinder"));
         }
         sp.registerOnSharedPreferenceChangeListener(this);
-        Shizuku.addBinderReceivedListenerSticky(shizukuBinderReceivedListener);
-        scheduleAutoStart();
+        ScreenOffBridge.addListener(bridgeListener);
+        ScreenOffBridge.warmUp(this);
+        recordDiagnostic("UserService", false,
+                ScreenOffBridge.isShizukuReady() ? "binding requested" : "Nightzuku/Shizuku not ready");
     }
 
 
@@ -517,6 +528,7 @@ public class GlobalService extends AccessibilityService implements SharedPrefere
 
     @Override
     public void onDestroy() {
+        ScreenOffBridge.removeListener(bridgeListener);
         autoStartHandler.removeCallbacksAndMessages(null);
         try { Shizuku.removeBinderReceivedListener(shizukuBinderReceivedListener); } catch (Throwable ignored) {}
         try { unregisterReceiver(screenStateReceiver); } catch (Exception ignored) {}
